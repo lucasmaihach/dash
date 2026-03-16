@@ -11,6 +11,7 @@ const META_LEVEL = process.env.META_LEVEL || 'campaign'
 const META_AD_LEVEL = process.env.META_AD_LEVEL || 'ad'
 const META_TIME_INCREMENT = process.env.META_TIME_INCREMENT || '1'
 const META_LIMIT = Number(process.env.META_LIMIT || '500')
+const INGEST_ONLY_CLIENT_ID = (process.env.INGEST_ONLY_CLIENT_ID || '').trim()
 // META_BREAKDOWNS foi removido da ingestão de campanhas.
 // Breakdowns inflavam reach/impressions (o mesmo usuário contado por placement).
 // A API retorna totais corretos sem breakdowns. Mantido aqui apenas como referência.
@@ -233,6 +234,35 @@ async function fetchAdsWithCreatives(accessToken, adAccountId) {
   return results
 }
 
+function extractUrlFromPreviewHtml(html) {
+  if (!html) return null
+  const iframeSrc = String(html).match(/src=["']([^"']+)["']/i)?.[1]
+  if (iframeSrc) return iframeSrc.replace(/&amp;/g, '&')
+
+  const href = String(html).match(/href=["']([^"']+)["']/i)?.[1]
+  if (href) return href.replace(/&amp;/g, '&')
+
+  return null
+}
+
+async function fetchAdPreviewUrl(accessToken, adId) {
+  const params = new URLSearchParams({
+    access_token: accessToken,
+    ad_format: 'DESKTOP_FEED_STANDARD'
+  })
+
+  const url = `https://graph.facebook.com/${META_API_VERSION}/${adId}/previews?${params.toString()}`
+  const resp = await fetch(url)
+  const payload = await resp.json()
+
+  if (!resp.ok || payload.error) {
+    return null
+  }
+
+  const firstPreview = payload?.data?.[0]
+  return extractUrlFromPreviewHtml(firstPreview?.body)
+}
+
 function detectCreativeType(creative) {
   if (!creative) return 'unknown'
   if (creative.video_id) return 'video'
@@ -345,6 +375,9 @@ async function main() {
   let totalSent = 0
 
   for (const [clientId, accessToken] of tokenByClient.entries()) {
+    if (INGEST_ONLY_CLIENT_ID && clientId !== INGEST_ONLY_CLIENT_ID) {
+      continue
+    }
     if (!accessToken) {
       console.warn(`client ${clientId}: skipping — token could not be decrypted`)
       continue
@@ -402,11 +435,25 @@ async function main() {
       for (const adAccountId of clientAccounts) {
         try {
           const ads = await fetchAdsWithCreatives(accessToken, adAccountId)
+          let previewsRecovered = 0
+
           for (const ad of ads) {
             const row = buildCreativeRow(clientId, ad)
+
+            // Fallback para link público: busca preview do anúncio quando a API não retorna
+            // ad_snapshot_url/link_url diretamente no endpoint de ads.
+            if (!row.ad_snapshot_url && row.ad_id) {
+              const previewUrl = await fetchAdPreviewUrl(accessToken, row.ad_id)
+              if (previewUrl) {
+                row.ad_snapshot_url = previewUrl
+                previewsRecovered++
+              }
+            }
+
             if (row.thumbnail_url || row.image_url || row.video_id) creativeRows.push(row)
           }
-          console.log(`  account ${adAccountId}: ${ads.length} ads with creatives`)
+
+          console.log(`  account ${adAccountId}: ${ads.length} ads with creatives (${previewsRecovered} preview links recovered)`)
         } catch (err) {
           console.warn(`  account ${adAccountId}: creatives fetch failed — ${err.message}`)
         }
@@ -424,6 +471,10 @@ async function main() {
     } catch (err) {
       console.error(`client ${clientId}: FAILED — ${err.message} — pulando para o próximo cliente`)
     }
+  }
+
+  if (INGEST_ONLY_CLIENT_ID && !tokenByClient.has(INGEST_ONLY_CLIENT_ID)) {
+    console.warn(`INGEST_ONLY_CLIENT_ID=${INGEST_ONLY_CLIENT_ID} não encontrado em client_meta_credentials ativos`)
   }
 
   console.log(`Done. Total rows upserted: ${totalSent}`)

@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation'
 import { getSupabaseServerClient } from '@/lib/supabase/server'
 import { getSupabaseAdminClient } from '@/lib/supabase/admin'
 import { encrypt } from '@/lib/crypto'
+import { runIngest } from '@/lib/ingestRunner'
 
 async function requireAdmin() {
   const supabase = await getSupabaseServerClient()
@@ -106,6 +107,33 @@ export async function createClientAction(formData: FormData) {
   }
 
   redirect('/admin?success=client_created')
+}
+
+export async function refreshAllClientsAction() {
+  await requireAdmin()
+
+  try {
+    await runIngest()
+    redirect('/admin?success=refresh_all_done')
+  } catch (err) {
+    console.error('[refreshAllClientsAction] ingest:', err)
+    redirect('/admin?error=refresh_all_failed')
+  }
+}
+
+export async function refreshClientAction(formData: FormData) {
+  await requireAdmin()
+
+  const clientId = String(formData.get('client_id') || '').trim()
+  if (!clientId) redirect('/admin?error=invalid_client_id')
+
+  try {
+    await runIngest(clientId)
+    redirect('/admin?success=refresh_client_done')
+  } catch (err) {
+    console.error('[refreshClientAction] ingest:', err)
+    redirect('/admin?error=refresh_client_failed')
+  }
 }
 
 export async function setClientStatusAction(formData: FormData) {

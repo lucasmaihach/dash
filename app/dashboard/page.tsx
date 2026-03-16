@@ -4,7 +4,7 @@ import { byCampaign, byDay, consolidate, fFloat, fInt, fMoney, fPct, type Metric
 import { getSupabaseServerClient } from '@/lib/supabase/server'
 import { getSupabaseAdminClient } from '@/lib/supabase/admin'
 import { resolveEffectiveClient } from '@/lib/auth'
-import { createProductReportAction, deleteProductReportAction } from './actions'
+import { createProductReportAction, deleteProductReportAction, refreshClientDataAction } from './actions'
 import { DailySection, type DayRow } from './DailySection'
 import { SortableTable } from './SortableTable'
 import { AdCreativesGrid, type CreativeCard } from './AdCreativesGrid'
@@ -38,6 +38,7 @@ type Search = {
   end?: string
   error?: string
   as?: string
+  sync?: 'done' | 'failed'
 }
 
 type DashboardPageProps = {
@@ -83,6 +84,10 @@ function buildDashboardHref(base: Search, patch: Partial<Search>) {
   return suffix ? `/dashboard?${suffix}` : '/dashboard'
 }
 
+function normalizeEntityKey(value: string | null | undefined): string {
+  return (value || '').trim().toLowerCase().replace(/\s+/g, ' ')
+}
+
 function rankByEntity(rows: AdMetricRow[], key: 'ad_name' | 'adset_name') {
   const grouped = new Map<string, MetricRow[]>()
 
@@ -105,6 +110,11 @@ function rankByEntity(rows: AdMetricRow[], key: 'ad_name' | 'adset_name') {
 
 export default async function DashboardPage({ searchParams }: DashboardPageProps) {
   const params = await searchParams
+  const syncMsg = params.sync === 'done'
+    ? 'Dados atualizados com sucesso.'
+    : params.sync === 'failed'
+      ? 'Falha ao atualizar os dados. Verifique logs e tente novamente.'
+      : null
 
   // Resolve o clientId efetivo com todas as validações de segurança:
   // - autentica o usuário
@@ -281,10 +291,10 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
       }
 
       for (const row of adLinkRows) {
-        const adName = row.ad_name?.trim()
-        if (!adName || adPublicLinkByName.has(adName)) continue
+        const adNameKey = normalizeEntityKey(row.ad_name)
+        if (!adNameKey || adPublicLinkByName.has(adNameKey)) continue
         const publicUrl = row.ad_snapshot_url || row.link_url
-        if (publicUrl) adPublicLinkByName.set(adName, publicUrl)
+        if (publicUrl) adPublicLinkByName.set(adNameKey, publicUrl)
       }
     }
 
@@ -347,6 +357,8 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
     as: isAdminView ? params.as : undefined,
   }
 
+  const currentDashboardHref = buildDashboardHref(baseHref, {})
+
   const viewTabs: Array<{ id: DashboardView; label: string }> = [
     { id: 'executivo', label: 'Executivo' },
     { id: 'daily', label: 'Desempenho Diário' },
@@ -404,6 +416,11 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
               ← Admin
             </a>
           ) : null}
+          <form action={refreshClientDataAction}>
+            {isAdminView ? <input type="hidden" name="as" value={params.as} /> : null}
+            <input type="hidden" name="return_to" value={currentDashboardHref} />
+            <button className="button-secondary" type="submit">Atualizar dados</button>
+          </form>
           <form action="/api/logout" method="post">
             <button className="button-secondary" type="submit">Sair</button>
           </form>
@@ -415,6 +432,12 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
           <h1>{viewingClientName || profile.full_name?.split(' ')[0] || 'Dashboard'}.</h1>
           <p>Seja bem-vindo de volta{profile.full_name ? `, ${profile.full_name.split(' ')[0]}` : ''}.</p>
         </section>
+
+        {syncMsg ? (
+          <section className="panel reveal d3">
+            <p style={{ color: params.sync === 'done' ? '#4ade80' : '#f87171', fontWeight: 600 }}>{syncMsg}</p>
+          </section>
+        ) : null}
 
         <section className="panel reveal d3">
           <h2>Relatórios de Produto</h2>
@@ -651,7 +674,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                 ]}
                 rows={bestAds.map((row) => ({
                   name: row.name,
-                  public_link: adPublicLinkByName.get(row.name) || '—',
+                  public_link: adPublicLinkByName.get(normalizeEntityKey(row.name)) || '—',
                   amount_spent: fMoney(row.totals.amount_spent),
                   reach: fInt(row.totals.reach),
                   impressions: fInt(row.totals.impressions),

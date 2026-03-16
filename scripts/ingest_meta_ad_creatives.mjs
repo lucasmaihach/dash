@@ -146,6 +146,35 @@ async function fetchAdsWithCreatives(accessToken, adAccountId) {
   return results
 }
 
+function extractUrlFromPreviewHtml(html) {
+  if (!html) return null
+  const iframeSrc = String(html).match(/src=["']([^"']+)["']/i)?.[1]
+  if (iframeSrc) return iframeSrc.replace(/&amp;/g, '&')
+
+  const href = String(html).match(/href=["']([^"']+)["']/i)?.[1]
+  if (href) return href.replace(/&amp;/g, '&')
+
+  return null
+}
+
+async function fetchAdPreviewUrl(accessToken, adId) {
+  const params = new URLSearchParams({
+    access_token: accessToken,
+    ad_format: 'DESKTOP_FEED_STANDARD'
+  })
+
+  const url = `https://graph.facebook.com/${META_API_VERSION}/${adId}/previews?${params.toString()}`
+  const resp = await fetch(url)
+  const payload = await resp.json()
+
+  if (!resp.ok || payload.error) {
+    return null
+  }
+
+  const firstPreview = payload?.data?.[0]
+  return extractUrlFromPreviewHtml(firstPreview?.body)
+}
+
 function detectCreativeType(creative) {
   if (!creative) return 'unknown'
   if (creative.video_id) return 'video'
@@ -223,14 +252,25 @@ async function main() {
     for (const adAccountId of clientAccounts) {
       try {
         const ads = await fetchAdsWithCreatives(accessToken, adAccountId)
+        let previewsRecovered = 0
+
         for (const ad of ads) {
           const row = buildCreativeRow(clientId, ad)
+
+          if (!row.ad_snapshot_url && row.ad_id) {
+            const previewUrl = await fetchAdPreviewUrl(accessToken, row.ad_id)
+            if (previewUrl) {
+              row.ad_snapshot_url = previewUrl
+              previewsRecovered++
+            }
+          }
+
           // Só salva se tiver pelo menos thumbnail
           if (row.thumbnail_url || row.image_url || row.video_id) {
             creativeRows.push(row)
           }
         }
-        console.log(`  account ${adAccountId}: ${ads.length} ads fetched`)
+        console.log(`  account ${adAccountId}: ${ads.length} ads fetched (${previewsRecovered} preview links recovered)`)
       } catch (err) {
         console.error(`  account ${adAccountId}: ERROR — ${err.message}`)
       }

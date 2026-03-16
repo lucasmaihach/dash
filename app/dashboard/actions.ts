@@ -3,6 +3,7 @@
 import { redirect } from 'next/navigation'
 import { getSupabaseServerClient } from '@/lib/supabase/server'
 import { getSupabaseAdminClient } from '@/lib/supabase/admin'
+import { runIngest } from '@/lib/ingestRunner'
 
 export async function deleteProductReportAction(formData: FormData) {
   const reportId = String(formData.get('report_id') || '').trim()
@@ -46,6 +47,46 @@ export async function deleteProductReportAction(formData: FormData) {
   // Redireciona para o dashboard sem nenhum relatório selecionado
   const redirectUrl = asClientId ? `/dashboard?as=${asClientId}` : '/dashboard'
   redirect(redirectUrl)
+}
+
+function buildDashboardRedirect(base: string, patch: string) {
+  const safeBase = base.startsWith('/dashboard') ? base : '/dashboard'
+  return `${safeBase}${safeBase.includes('?') ? '&' : '?'}${patch}`
+}
+
+export async function refreshClientDataAction(formData: FormData) {
+  const asClientId = String(formData.get('as') || '').trim()
+  const returnTo = String(formData.get('return_to') || '/dashboard').trim()
+
+  const supabase = await getSupabaseServerClient()
+  const {
+    data: { user }
+  } = await supabase.auth.getUser()
+
+  if (!user) {
+    redirect('/login')
+  }
+
+  const { data: profile, error: profileError } = await supabase
+    .from('profiles')
+    .select('client_id, role')
+    .eq('id', user.id)
+    .single()
+
+  if (profileError || !profile?.client_id) {
+    redirect(buildDashboardRedirect(returnTo, 'sync=failed'))
+  }
+
+  const isAdminView = profile.role === 'admin' && !!asClientId
+  const effectiveClientId = isAdminView ? asClientId : profile.client_id
+
+  try {
+    await runIngest(effectiveClientId)
+    redirect(buildDashboardRedirect(returnTo, 'sync=done'))
+  } catch (err) {
+    console.error('[refreshClientDataAction] ingest:', err)
+    redirect(buildDashboardRedirect(returnTo, 'sync=failed'))
+  }
 }
 
 export async function createProductReportAction(formData: FormData) {

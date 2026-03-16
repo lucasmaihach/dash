@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation'
 import { getSupabaseServerClient } from '@/lib/supabase/server'
 import { getSupabaseAdminClient } from '@/lib/supabase/admin'
-import { createClientAction, setClientStatusAction } from './actions'
+import { createClientAction, refreshAllClientsAction, refreshClientAction, setClientStatusAction } from './actions'
 
 type AdminPageProps = {
   searchParams: Promise<{ error?: string; success?: string }>
@@ -16,13 +16,17 @@ const ERROR_MESSAGES: Record<string, string> = {
   create_account_failed: 'Erro ao salvar conta de anúncios.',
   invalid_client_id: 'ID de cliente inválido.',
   client_not_found: 'Cliente não encontrado.',
-  client_inactive: 'Este cliente está inativo. Reative-o antes de visualizar.'
+  client_inactive: 'Este cliente está inativo. Reative-o antes de visualizar.',
+  refresh_all_failed: 'Não foi possível atualizar os dados de todos os clientes.',
+  refresh_client_failed: 'Não foi possível atualizar os dados deste cliente.'
 }
 
 const SUCCESS_MESSAGES: Record<string, string> = {
   client_created: 'Cliente criado com sucesso.',
   client_deactivated: 'Cliente desativado.',
-  client_reactivated: 'Cliente reativado.'
+  client_reactivated: 'Cliente reativado.',
+  refresh_all_done: 'Atualização de dados concluída para todos os clientes ativos.',
+  refresh_client_done: 'Atualização de dados concluída para o cliente.'
 }
 
 export default async function AdminPage({ searchParams }: AdminPageProps) {
@@ -149,6 +153,18 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
           </form>
         </section>
 
+        <section className="panel reveal d4">
+          <h2>Atualização de Dados</h2>
+          <p style={{ color: 'var(--text-muted)', fontSize: 13, marginBottom: 12 }}>
+            Executa a ingestão da Meta API para atualizar métricas e criativos.
+          </p>
+          <form action={refreshAllClientsAction}>
+            <button className="button-secondary" type="submit" style={{ fontSize: 12, padding: '6px 12px' }}>
+              Atualizar todos os clientes
+            </button>
+          </form>
+        </section>
+
         {/* Lista de clientes */}
         <section className="panel reveal d4">
           <h2>Clientes ({clientsWithData.length})</h2>
@@ -212,6 +228,16 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
                         >
                           👁 Ver
                         </a>
+                        <form action={refreshClientAction}>
+                          <input type="hidden" name="client_id" value={c.id} />
+                          <button
+                            className="button-secondary"
+                            type="submit"
+                            style={{ fontSize: 12, padding: '4px 10px' }}
+                          >
+                            Atualizar dados
+                          </button>
+                        </form>
                         <form action={setClientStatusAction}>
                           <input type="hidden" name="client_id" value={c.id} />
                           <input

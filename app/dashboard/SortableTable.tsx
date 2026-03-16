@@ -5,6 +5,7 @@ import { useState } from 'react'
 export type TableColumn = {
   key: string
   label: string
+  type?: 'text' | 'link'
 }
 
 type Props = {
@@ -20,6 +21,21 @@ function toNum(v: string): number {
     v.replace(/R\$\s*/g, '').replace(/%/g, '').replace(/\./g, '').replace(',', '.').trim()
   )
   return isNaN(n) ? -Infinity : n
+}
+
+function renderCellValue(column: TableColumn, value: string | undefined) {
+  const cellValue = value ?? ''
+
+  if (column.type === 'link') {
+    if (!cellValue || cellValue === '—') return '—'
+    return (
+      <a href={cellValue} target="_blank" rel="noopener noreferrer" style={{ color: '#93c5fd' }}>
+        Abrir ↗
+      </a>
+    )
+  }
+
+  return cellValue
 }
 
 export function SortableTable({ columns, rows, firstColStyle, pageSize = 20 }: Props) {
@@ -85,7 +101,7 @@ export function SortableTable({ columns, rows, firstColStyle, pageSize = 20 }: P
             <tr key={pageStart + i}>
               {columns.map((col, j) => (
                 <td key={col.key} style={j === 0 ? firstColStyle : undefined}>
-                  {row[col.key]}
+                  {renderCellValue(col, row[col.key])}
                 </td>
               ))}
             </tr>

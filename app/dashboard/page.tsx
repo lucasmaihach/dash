@@ -56,6 +56,12 @@ type AdMetricRow = MetricRow & {
   adset_name: string | null
 }
 
+type AdCreativeLinkRow = {
+  ad_name: string | null
+  ad_snapshot_url: string | null
+  link_url: string | null
+}
+
 function makeDateValue(value: string | undefined, fallback: string): string {
   if (!value) return fallback
   return value
@@ -225,6 +231,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   let bestAdsets: Array<{ name: string; totals: ReturnType<typeof consolidate> }> = []
   let creativeCards: CreativeCard[] = []
   let creativesTableMissing = false
+  const adPublicLinkByName = new Map<string, string>()
 
   if (needsAdLevelData) {
     const adRes = await dataClient
@@ -249,11 +256,43 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
     bestAds = rankByEntity(adRows, 'ad_name').slice(0, 20)
     bestAdsets = rankByEntity(adRows, 'adset_name').slice(0, 20)
 
+    if (selectedView === 'ads') {
+      // Link público do anúncio (prioriza ad_snapshot_url; fallback para link_url)
+      const adLinksRes = await dataClient
+        .from('meta_ad_creatives')
+        .select('ad_name,ad_snapshot_url,link_url')
+        .eq('client_id', effectiveClientId)
+
+      let adLinkRows: AdCreativeLinkRow[] = []
+
+      if (adLinksRes.error?.code === '42703') {
+        const fallbackRes = await dataClient
+          .from('meta_ad_creatives')
+          .select('ad_name,link_url')
+          .eq('client_id', effectiveClientId)
+
+        adLinkRows = ((fallbackRes.data || []) as Array<{ ad_name: string | null; link_url: string | null }>).map((r) => ({
+          ad_name: r.ad_name,
+          ad_snapshot_url: null,
+          link_url: r.link_url,
+        }))
+      } else {
+        adLinkRows = (adLinksRes.data || []) as AdCreativeLinkRow[]
+      }
+
+      for (const row of adLinkRows) {
+        const adName = row.ad_name?.trim()
+        if (!adName || adPublicLinkByName.has(adName)) continue
+        const publicUrl = row.ad_snapshot_url || row.link_url
+        if (publicUrl) adPublicLinkByName.set(adName, publicUrl)
+      }
+    }
+
     // Criativos: busca thumbnails + métricas agregadas por ad_id
     if (selectedView === 'creatives') {
       const creativesRes = await dataClient
         .from('meta_ad_creatives')
-        .select('ad_id,ad_name,creative_type,thumbnail_url,video_id,link_url,call_to_action_type')
+        .select('ad_id,ad_name,creative_type,thumbnail_url,video_id,link_url,ad_snapshot_url,call_to_action_type')
         .eq('client_id', effectiveClientId)
 
       // 42P01 = tabela não existe | 42703 = coluna não existe (creative_type ausente)
@@ -277,6 +316,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
               thumbnail_url: c.thumbnail_url,
               video_id: c.video_id,
               link_url: c.link_url,
+              ad_snapshot_url: c.ad_snapshot_url ?? null,
               call_to_action_type: c.call_to_action_type,
               amount_spent: m ? fMoney(m.amount_spent) : '—',
               leads: m ? fInt(m.leads) : '—',
@@ -596,6 +636,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
               <SortableTable
                 columns={[
                   { key: 'name', label: 'Ad Name' },
+                  { key: 'public_link', label: 'Link Público', type: 'link' },
                   { key: 'amount_spent', label: 'Amount Spent' },
                   { key: 'reach', label: 'Reach' },
                   { key: 'impressions', label: 'Impressions' },
@@ -610,6 +651,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                 ]}
                 rows={bestAds.map((row) => ({
                   name: row.name,
+                  public_link: adPublicLinkByName.get(row.name) || '—',
                   amount_spent: fMoney(row.totals.amount_spent),
                   reach: fInt(row.totals.reach),
                   impressions: fInt(row.totals.impressions),

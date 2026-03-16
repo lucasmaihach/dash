@@ -9,6 +9,7 @@ export type CreativeCard = {
   thumbnail_url: string | null
   video_id: string | null
   link_url: string | null
+  ad_snapshot_url: string | null
   call_to_action_type: string | null
   // métricas
   amount_spent: string
@@ -115,15 +116,15 @@ export function AdCreativesGrid({ cards }: Props) {
                   <span className="creative-metric-value">{card.cpc}</span>
                 </div>
 
-                {card.link_url && (
+                {(card.ad_snapshot_url || card.link_url) && (
                   <a
-                    href={card.link_url}
+                    href={card.ad_snapshot_url || card.link_url || '#'}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="creative-link-btn"
                     onClick={(e) => e.stopPropagation()}
                   >
-                    Abrir destino ↗
+                    Ver anúncio ↗
                   </a>
                 )}
               </div>

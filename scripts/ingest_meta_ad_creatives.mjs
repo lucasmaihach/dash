@@ -57,17 +57,45 @@ async function supabaseGet(path) {
 
 async function supabaseUpsert(table, rows, onConflict) {
   if (!rows.length) return
-  const resp = await fetch(`${SUPABASE_URL}/rest/v1/${table}?on_conflict=${encodeURIComponent(onConflict)}`, {
+
+  const url = `${SUPABASE_URL}/rest/v1/${table}?on_conflict=${encodeURIComponent(onConflict)}`
+  const headers = {
+    apikey: SUPABASE_SERVICE_ROLE_KEY,
+    Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+    'Content-Type': 'application/json',
+    Prefer: 'resolution=merge-duplicates,return=minimal',
+  }
+
+  const resp = await fetch(url, {
     method: 'POST',
-    headers: {
-      apikey: SUPABASE_SERVICE_ROLE_KEY,
-      Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
-      'Content-Type': 'application/json',
-      Prefer: 'resolution=merge-duplicates,return=minimal',
-    },
+    headers,
     body: JSON.stringify(rows),
   })
-  if (!resp.ok) throw new Error(`Supabase UPSERT failed (${resp.status}): ${await resp.text()}`)
+
+  if (resp.ok) return
+
+  const errorText = await resp.text()
+
+  if (
+    table === 'meta_ad_creatives' &&
+    errorText.includes("Could not find the 'ad_snapshot_url' column")
+  ) {
+    const rowsWithoutSnapshot = rows.map(({ ad_snapshot_url, ...rest }) => rest)
+    const retry = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(rowsWithoutSnapshot),
+    })
+
+    if (retry.ok) {
+      console.warn('meta_ad_creatives: fallback sem ad_snapshot_url aplicado com sucesso')
+      return
+    }
+
+    throw new Error(`Supabase UPSERT failed (${retry.status}) after fallback: ${await retry.text()}`)
+  }
+
+  throw new Error(`Supabase UPSERT failed (${resp.status}): ${errorText}`)
 }
 
 /**
@@ -85,6 +113,7 @@ async function fetchAdsWithCreatives(accessToken, adAccountId) {
     'status',
     'adset_id',
     'campaign_id',
+    'ad_snapshot_url',
     'creative.fields(id,thumbnail_url,image_url,video_id,link_url,call_to_action{type})',
   ].join(',')
 
@@ -139,6 +168,7 @@ function buildCreativeRow(clientId, ad) {
     image_url: creative.image_url || null,
     video_id: creative.video_id || null,
     link_url: creative.link_url || null,
+    ad_snapshot_url: ad.ad_snapshot_url || null,
     call_to_action_type: callToAction,
     status: ad.status || null,
     creative_type: detectCreativeType(creative),

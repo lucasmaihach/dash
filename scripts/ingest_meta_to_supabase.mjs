@@ -132,20 +132,67 @@ async function supabaseGet(path) {
 
 async function supabaseUpsert(table, rows, onConflict) {
   if (!rows.length) return
-  const resp = await fetch(`${SUPABASE_URL}/rest/v1/${table}?on_conflict=${encodeURIComponent(onConflict)}`, {
+
+  const url = `${SUPABASE_URL}/rest/v1/${table}?on_conflict=${encodeURIComponent(onConflict)}`
+  const headers = {
+    apikey: SUPABASE_SERVICE_ROLE_KEY,
+    Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+    'Content-Type': 'application/json',
+    Prefer: 'resolution=merge-duplicates,return=minimal'
+  }
+
+  const resp = await fetch(url, {
     method: 'POST',
-    headers: {
-      apikey: SUPABASE_SERVICE_ROLE_KEY,
-      Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
-      'Content-Type': 'application/json',
-      Prefer: 'resolution=merge-duplicates,return=minimal'
-    },
+    headers,
     body: JSON.stringify(rows)
   })
 
-  if (!resp.ok) {
-    throw new Error(`Supabase UPSERT failed (${resp.status}): ${await resp.text()}`)
+  if (resp.ok) return
+
+  const errorText = await resp.text()
+
+  // Compatibilidade com ambientes em que meta_daily_ad_metrics ainda não possui account_name.
+  // Se esse for o único erro de schema, tenta novamente removendo o campo.
+  if (
+    table === 'meta_daily_ad_metrics' &&
+    errorText.includes("Could not find the 'account_name' column")
+  ) {
+    const rowsWithoutAccountName = rows.map(({ account_name, ...rest }) => rest)
+    const retry = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(rowsWithoutAccountName)
+    })
+
+    if (retry.ok) {
+      console.warn('meta_daily_ad_metrics: fallback sem account_name aplicado com sucesso')
+      return
+    }
+
+    throw new Error(`Supabase UPSERT failed (${retry.status}) after fallback: ${await retry.text()}`)
   }
+
+  // Compatibilidade com ambientes em que meta_ad_creatives ainda não possui ad_snapshot_url.
+  if (
+    table === 'meta_ad_creatives' &&
+    errorText.includes("Could not find the 'ad_snapshot_url' column")
+  ) {
+    const rowsWithoutSnapshot = rows.map(({ ad_snapshot_url, ...rest }) => rest)
+    const retry = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(rowsWithoutSnapshot)
+    })
+
+    if (retry.ok) {
+      console.warn('meta_ad_creatives: fallback sem ad_snapshot_url aplicado com sucesso')
+      return
+    }
+
+    throw new Error(`Supabase UPSERT failed (${retry.status}) after fallback: ${await retry.text()}`)
+  }
+
+  throw new Error(`Supabase UPSERT failed (${resp.status}): ${errorText}`)
 }
 
 // ---------- creatives ----------
@@ -156,6 +203,7 @@ async function fetchAdsWithCreatives(accessToken, adAccountId) {
     'status',
     'adset_id',
     'campaign_id',
+    'ad_snapshot_url',
     'creative.fields(id,thumbnail_url,image_url,video_id,link_url,call_to_action{type})',
   ].join(',')
 
@@ -205,6 +253,7 @@ function buildCreativeRow(clientId, ad) {
     image_url: creative.image_url || null,
     video_id: creative.video_id || null,
     link_url: creative.link_url || null,
+    ad_snapshot_url: ad.ad_snapshot_url || null,
     call_to_action_type: creative.call_to_action?.type || null,
     status: ad.status || null,
     creative_type: detectCreativeType(creative),
@@ -333,9 +382,19 @@ async function main() {
       }
 
       await supabaseUpsert('meta_daily_campaign_metrics', campaignRows, 'client_id,date,campaign_name,project_tag')
-      await supabaseUpsert('meta_daily_ad_metrics', adRows.filter((r) => r.ad_id), 'client_id,date,ad_id')
-      totalSent += campaignRows.length + adRows.length
-      console.log(`client ${clientId}: upserted campaign=${campaignRows.length} ad=${adRows.length}`)
+      totalSent += campaignRows.length
+
+      let upsertedAdRows = 0
+      try {
+        const validAdRows = adRows.filter((r) => r.ad_id)
+        await supabaseUpsert('meta_daily_ad_metrics', validAdRows, 'client_id,date,ad_id')
+        upsertedAdRows = validAdRows.length
+        totalSent += upsertedAdRows
+      } catch (err) {
+        console.warn(`client ${clientId}: ad metrics upsert skipped — ${err.message}`)
+      }
+
+      console.log(`client ${clientId}: upserted campaign=${campaignRows.length} ad=${upsertedAdRows}`)
 
       // Criativos
       console.log(`client ${clientId}: fetching creatives...`)

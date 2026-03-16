@@ -14,6 +14,7 @@ create table if not exists public.meta_ad_creatives (
   video_url text,
   video_id text,
   link_url text,
+  ad_snapshot_url text,
   call_to_action_type text,
   creative_type text not null default 'unknown',
   status text,
@@ -27,6 +28,10 @@ create index if not exists idx_ad_creatives_client
 
 create index if not exists idx_ad_creatives_client_ad_id
   on public.meta_ad_creatives (client_id, ad_id);
+
+-- Compatibilidade para bases já existentes
+alter table public.meta_ad_creatives
+  add column if not exists ad_snapshot_url text;
 
 -- Auto updated_at trigger
 drop trigger if exists trg_ad_creatives_set_updated_at on public.meta_ad_creatives;

@@ -8,6 +8,7 @@ import { createProductReportAction, deleteProductReportAction, refreshClientData
 import { DailySection, type DayRow } from './DailySection'
 import { SortableTable } from './SortableTable'
 import { AdCreativesGrid, type CreativeCard } from './AdCreativesGrid'
+import { SubmitButton } from '@/app/components/SubmitButton'
 
 // Cache da query principal por 2 minutos — isolado por cliente.
 // A key inclui o clientId explicitamente para garantir entradas separadas no cache.
@@ -419,7 +420,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
           <form action={refreshClientDataAction}>
             {isAdminView ? <input type="hidden" name="as" value={params.as} /> : null}
             <input type="hidden" name="return_to" value={currentDashboardHref} />
-            <button className="button-secondary" type="submit">Atualizar dados</button>
+            <SubmitButton label="Atualizar dados" pendingLabel="Atualizando..." className="button-secondary" />
           </form>
           <form action="/api/logout" method="post">
             <button className="button-secondary" type="submit">Sair</button>

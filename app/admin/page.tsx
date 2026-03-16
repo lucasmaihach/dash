@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation'
 import { getSupabaseServerClient } from '@/lib/supabase/server'
 import { getSupabaseAdminClient } from '@/lib/supabase/admin'
 import { createClientAction, refreshAllClientsAction, refreshClientAction, setClientStatusAction } from './actions'
+import { SubmitButton } from '@/app/components/SubmitButton'
 
 type AdminPageProps = {
   searchParams: Promise<{ error?: string; success?: string }>
@@ -159,9 +160,12 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
             Executa a ingestão da Meta API para atualizar métricas e criativos.
           </p>
           <form action={refreshAllClientsAction}>
-            <button className="button-secondary" type="submit" style={{ fontSize: 12, padding: '6px 12px' }}>
-              Atualizar todos os clientes
-            </button>
+            <SubmitButton
+              label="Atualizar todos os clientes"
+              pendingLabel="Atualizando todos..."
+              className="button-secondary"
+              style={{ fontSize: 12, padding: '6px 12px' }}
+            />
           </form>
         </section>
 
@@ -230,13 +234,12 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
                         </a>
                         <form action={refreshClientAction}>
                           <input type="hidden" name="client_id" value={c.id} />
-                          <button
+                          <SubmitButton
+                            label="Atualizar dados"
+                            pendingLabel="Atualizando..."
                             className="button-secondary"
-                            type="submit"
                             style={{ fontSize: 12, padding: '4px 10px' }}
-                          >
-                            Atualizar dados
-                          </button>
+                          />
                         </form>
                         <form action={setClientStatusAction}>
                           <input type="hidden" name="client_id" value={c.id} />

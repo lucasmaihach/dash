@@ -626,7 +626,7 @@ button {
   border: 1px solid rgba(255, 255, 255, 0.14);
   background: linear-gradient(90deg, rgba(249, 115, 22, 0.35), rgba(234, 88, 12, 0.62));
   box-shadow: 0 10px 30px rgba(249, 115, 22, 0.18);
-  padding: 10px 14px;
+  padding: 10px 12px;
   min-height: 52px;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto auto;
@@ -635,7 +635,6 @@ button {
   min-width: 0;
   max-width: 100%;
   overflow: hidden;
-  clip-path: polygon(2% 0%, 98% 0%, 92% 100%, 8% 100%);
 }
 
 .funnel-title {
@@ -1101,12 +1100,6 @@ tbody tr:hover {
 
   .funnel-bar {
     gap: 6px;
-    padding: 9px 12px;
-    grid-template-columns: minmax(0, 1fr) auto;
-  }
-
-  .funnel-rate {
-    grid-column: 1 / -1;
   }
 
   .filter-actions-row {

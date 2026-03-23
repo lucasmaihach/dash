@@ -40,6 +40,7 @@ type Search = {
   error?: string
   as?: string
   sync?: 'done' | 'failed'
+  sync_reason?: string
 }
 
 type DashboardPageProps = {
@@ -111,10 +112,11 @@ function rankByEntity(rows: AdMetricRow[], key: 'ad_name' | 'adset_name') {
 
 export default async function DashboardPage({ searchParams }: DashboardPageProps) {
   const params = await searchParams
+  const syncReason = params.sync_reason ? decodeURIComponent(params.sync_reason) : null
   const syncMsg = params.sync === 'done'
     ? 'Dados atualizados com sucesso.'
     : params.sync === 'failed'
-      ? 'Falha ao atualizar os dados. Verifique logs e tente novamente.'
+      ? `Falha ao atualizar os dados.${syncReason ? ` Motivo: ${syncReason}` : ' Verifique logs e tente novamente.'}`
       : null
 
   // Resolve o clientId efetivo com todas as validações de segurança:

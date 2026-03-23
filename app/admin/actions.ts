@@ -106,19 +106,33 @@ export async function createClientAction(formData: FormData) {
     redirect('/admin?error=create_account_failed')
   }
 
-  redirect('/admin?success=client_created')
+  // 6. Ingestão automática inicial do cliente recém-criado
+  let ingestFailed = false
+  try {
+    await runIngest(client.id)
+  } catch (err) {
+    console.error('[createClientAction] initial_ingest:', err)
+    ingestFailed = true
+  }
+
+  redirect(ingestFailed
+    ? '/admin?success=client_created&error=create_client_sync_failed'
+    : '/admin?success=client_created_and_synced'
+  )
 }
 
 export async function refreshAllClientsAction() {
   await requireAdmin()
 
+  let failed = false
   try {
     await runIngest()
-    redirect('/admin?success=refresh_all_done')
   } catch (err) {
     console.error('[refreshAllClientsAction] ingest:', err)
-    redirect('/admin?error=refresh_all_failed')
+    failed = true
   }
+
+  redirect(failed ? '/admin?error=refresh_all_failed' : '/admin?success=refresh_all_done')
 }
 
 export async function refreshClientAction(formData: FormData) {
@@ -127,13 +141,15 @@ export async function refreshClientAction(formData: FormData) {
   const clientId = String(formData.get('client_id') || '').trim()
   if (!clientId) redirect('/admin?error=invalid_client_id')
 
+  let failed = false
   try {
     await runIngest(clientId)
-    redirect('/admin?success=refresh_client_done')
   } catch (err) {
     console.error('[refreshClientAction] ingest:', err)
-    redirect('/admin?error=refresh_client_failed')
+    failed = true
   }
+
+  redirect(failed ? '/admin?error=refresh_client_failed' : '/admin?success=refresh_client_done')
 }
 
 export async function setClientStatusAction(formData: FormData) {

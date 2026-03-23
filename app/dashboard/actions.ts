@@ -54,6 +54,11 @@ function buildDashboardRedirect(base: string, patch: string) {
   return `${safeBase}${safeBase.includes('?') ? '&' : '?'}${patch}`
 }
 
+function toShortReason(err: unknown): string {
+  const raw = err instanceof Error ? err.message : String(err)
+  return encodeURIComponent(raw.slice(0, 180))
+}
+
 export async function refreshClientDataAction(formData: FormData) {
   const asClientId = String(formData.get('as') || '').trim()
   const returnTo = String(formData.get('return_to') || '/dashboard').trim()
@@ -73,20 +78,29 @@ export async function refreshClientDataAction(formData: FormData) {
     .eq('id', user.id)
     .single()
 
-  if (profileError || !profile?.client_id) {
+  if (profileError) {
     redirect(buildDashboardRedirect(returnTo, 'sync=failed'))
   }
 
   const isAdminView = profile.role === 'admin' && !!asClientId
   const effectiveClientId = isAdminView ? asClientId : profile.client_id
 
-  try {
-    await runIngest(effectiveClientId)
-    redirect(buildDashboardRedirect(returnTo, 'sync=done'))
-  } catch (err) {
-    console.error('[refreshClientDataAction] ingest:', err)
+  if (!effectiveClientId) {
     redirect(buildDashboardRedirect(returnTo, 'sync=failed'))
   }
+
+  let ingestError: unknown = null
+  try {
+    await runIngest(effectiveClientId)
+  } catch (err) {
+    console.error('[refreshClientDataAction] ingest:', err)
+    ingestError = err
+  }
+
+  redirect(ingestError
+    ? buildDashboardRedirect(returnTo, `sync=failed&sync_reason=${toShortReason(ingestError)}`)
+    : buildDashboardRedirect(returnTo, 'sync=done')
+  )
 }
 
 export async function createProductReportAction(formData: FormData) {

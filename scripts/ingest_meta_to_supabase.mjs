@@ -4,7 +4,8 @@ const SUPABASE_URL = process.env.SUPABASE_URL
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY
 const ENCRYPT_KEY = process.env.ENCRYPT_KEY
 const REVALIDATE_SECRET = process.env.REVALIDATE_SECRET
-const NEXT_PUBLIC_APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+const APP_BASE_URL =
+  (process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || '').trim().replace(/\/$/, '')
 const META_API_VERSION = process.env.META_API_VERSION || 'v21.0'
 const META_DATE_PRESET = process.env.META_DATE_PRESET || 'last_30d'
 const META_LEVEL = process.env.META_LEVEL || 'campaign'
@@ -295,7 +296,7 @@ async function fetchMetaInsights(accessToken, adAccountId, options = {}) {
   const level = options.level || META_LEVEL
   const datePreset = options.datePreset || META_DATE_PRESET
   const timeIncrement = options.timeIncrement || META_TIME_INCREMENT
-  const breakdowns = options.breakdowns === undefined ? META_BREAKDOWNS : options.breakdowns
+  const breakdowns = options.breakdowns === undefined ? [] : options.breakdowns
 
   const baseUrl = `https://graph.facebook.com/${META_API_VERSION}/act_${String(adAccountId).replace(/^act_/, '')}/insights`
   const fields = [
@@ -355,16 +356,16 @@ async function main() {
   const credentials = await supabaseGet('client_meta_credentials?select=client_id,access_token,is_active&is_active=eq.true')
   const accounts = await supabaseGet('client_ad_accounts?select=client_id,ad_account_id,is_active&is_active=eq.true')
 
-  const tokenByClient = new Map(
-    credentials.map((c) => {
-      try {
-        return [c.client_id, decryptToken(c.access_token)]
-      } catch (err) {
-        console.error(`client ${c.client_id}: failed to decrypt token —`, err.message)
-        return [c.client_id, null]
-      }
-    })
-  )
+  const tokenByClient = new Map()
+
+  for (const c of credentials) {
+    try {
+      tokenByClient.set(c.client_id, decryptToken(c.access_token))
+    } catch (err) {
+      console.error(`client ${c.client_id}: failed to decrypt token —`, err.message)
+      tokenByClient.set(c.client_id, null)
+    }
+  }
   const accountsByClient = new Map()
 
   for (const acc of accounts) {
@@ -373,6 +374,7 @@ async function main() {
   }
 
   let totalSent = 0
+  const clientFailures = []
 
   for (const [clientId, accessToken] of tokenByClient.entries()) {
     if (INGEST_ONLY_CLIENT_ID && clientId !== INGEST_ONLY_CLIENT_ID) {
@@ -380,12 +382,14 @@ async function main() {
     }
     if (!accessToken) {
       console.warn(`client ${clientId}: skipping — token could not be decrypted`)
+      clientFailures.push({ clientId, reason: 'token_decrypt_failed' })
       continue
     }
 
     const clientAccounts = accountsByClient.get(clientId) || []
     if (!clientAccounts.length) {
       console.log(`client ${clientId}: no ad accounts, skipping`)
+      clientFailures.push({ clientId, reason: 'no_active_ad_accounts' })
       continue
     }
 
@@ -394,6 +398,7 @@ async function main() {
     try {
       const campaignRows = []
       const adRows = []
+      let insightsFailedAccounts = 0
 
       for (const adAccountId of clientAccounts) {
         try {
@@ -410,8 +415,13 @@ async function main() {
           })
           for (const row of adInsights) adRows.push(buildAdMetricRow(clientId, row))
         } catch (err) {
+          insightsFailedAccounts++
           console.warn(`  account ${adAccountId}: insights fetch failed — ${err.message}`)
         }
+      }
+
+      if (insightsFailedAccounts === clientAccounts.length) {
+        throw new Error('all ad accounts failed while fetching insights')
       }
 
       await supabaseUpsert('meta_daily_campaign_metrics', campaignRows, 'client_id,date,campaign_name,project_tag')
@@ -469,12 +479,22 @@ async function main() {
 
     await revalidateClientCache(clientId)
     } catch (err) {
+      clientFailures.push({ clientId, reason: err.message })
       console.error(`client ${clientId}: FAILED — ${err.message} — pulando para o próximo cliente`)
     }
   }
 
   if (INGEST_ONLY_CLIENT_ID && !tokenByClient.has(INGEST_ONLY_CLIENT_ID)) {
     console.warn(`INGEST_ONLY_CLIENT_ID=${INGEST_ONLY_CLIENT_ID} não encontrado em client_meta_credentials ativos`)
+  }
+
+  if (clientFailures.length > 0) {
+    console.error('Clients with failures:')
+    for (const failure of clientFailures) {
+      console.error(` - ${failure.clientId}: ${failure.reason}`)
+    }
+
+    throw new Error(`Ingest finished with failures in ${clientFailures.length} client(s)`)
   }
 
   console.log(`Done. Total rows upserted: ${totalSent}`)
@@ -486,8 +506,13 @@ async function revalidateClientCache(clientId) {
     return
   }
 
+  if (!APP_BASE_URL) {
+    console.log(`client ${clientId}: APP URL not set, skipping cache revalidation`)
+    return
+  }
+
   try {
-    const resp = await fetch(`${NEXT_PUBLIC_APP_URL}/api/revalidate`, {
+    const resp = await fetch(`${APP_BASE_URL}/api/revalidate`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -502,7 +527,7 @@ async function revalidateClientCache(clientId) {
       console.warn(`client ${clientId}: cache revalidation failed (${resp.status})`)
     }
   } catch (err) {
-    console.warn(`client ${clientId}: cache revalidation error —`, err.message)
+    console.warn(`client ${clientId}: cache revalidation skipped (${err.message})`)
   }
 }
 

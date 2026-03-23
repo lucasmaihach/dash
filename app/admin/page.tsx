@@ -19,11 +19,13 @@ const ERROR_MESSAGES: Record<string, string> = {
   client_not_found: 'Cliente não encontrado.',
   client_inactive: 'Este cliente está inativo. Reative-o antes de visualizar.',
   refresh_all_failed: 'Não foi possível atualizar os dados de todos os clientes.',
-  refresh_client_failed: 'Não foi possível atualizar os dados deste cliente.'
+  refresh_client_failed: 'Não foi possível atualizar os dados deste cliente.',
+  create_client_sync_failed: 'Cliente criado, mas a ingestão automática inicial falhou. Clique em "Atualizar dados" para tentar novamente.'
 }
 
 const SUCCESS_MESSAGES: Record<string, string> = {
   client_created: 'Cliente criado com sucesso.',
+  client_created_and_synced: 'Cliente criado e dados ingeridos com sucesso.',
   client_deactivated: 'Cliente desativado.',
   client_reactivated: 'Cliente reativado.',
   refresh_all_done: 'Atualização de dados concluída para todos os clientes ativos.',
@@ -141,15 +143,7 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
             </div>
             <div className="field filter-actions">
               <label>&nbsp;</label>
-              <button className="button-custom" type="submit">
-                <div className="points_wrapper" aria-hidden="true">
-                  <i className="point" />
-                  <i className="point" />
-                  <i className="point" />
-                  <i className="point" />
-                </div>
-                <span className="inner">Criar Cliente</span>
-              </button>
+              <SubmitButton className="button-custom" label="Criar Cliente" pendingLabel="Criando + atualizando dados..." />
             </div>
           </form>
         </section>

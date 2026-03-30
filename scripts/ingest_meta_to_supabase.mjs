@@ -79,7 +79,7 @@ function buildCampaignMetricRow(clientId, raw, leadActionKey) {
   const linkClicks = actionValue(actions, ['link_click']) || toNum(raw.clicks)
   const landingPageViews = actionValue(actions, ['landing_page_view', 'omni_landing_page_view'])
   const leads = leadActionKey
-    ? (actionValue(conversions, [leadActionKey]) || actionValue(actions, DEFAULT_LEAD_KEYS))
+    ? (actionValue(conversions, [leadActionKey]) + actionValue(actions, DEFAULT_LEAD_KEYS))
     : actionValue(actions, DEFAULT_LEAD_KEYS)
 
   // Sem breakdown: uma linha por campanha/dia com totais corretos da API.
@@ -105,7 +105,7 @@ function buildAdMetricRow(clientId, raw, leadActionKey) {
   const linkClicks = actionValue(actions, ['link_click']) || toNum(raw.clicks)
   const landingPageViews = actionValue(actions, ['landing_page_view', 'omni_landing_page_view'])
   const leads = leadActionKey
-    ? (actionValue(conversions, [leadActionKey]) || actionValue(actions, DEFAULT_LEAD_KEYS))
+    ? (actionValue(conversions, [leadActionKey]) + actionValue(actions, DEFAULT_LEAD_KEYS))
     : actionValue(actions, DEFAULT_LEAD_KEYS)
 
   return {

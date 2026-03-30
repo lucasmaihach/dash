@@ -75,10 +75,12 @@ const DEFAULT_LEAD_KEYS = ['lead', 'offsite_conversion.fb_pixel_lead', 'onsite_w
 
 function buildCampaignMetricRow(clientId, raw, leadActionKey) {
   const actions = raw.actions || []
+  const conversions = raw.conversions || []
   const linkClicks = actionValue(actions, ['link_click']) || toNum(raw.clicks)
   const landingPageViews = actionValue(actions, ['landing_page_view', 'omni_landing_page_view'])
-  const leadKeys = leadActionKey ? [leadActionKey, ...DEFAULT_LEAD_KEYS] : DEFAULT_LEAD_KEYS
-  const leads = actionValue(actions, leadKeys)
+  const leads = leadActionKey
+    ? (actionValue(conversions, [leadActionKey]) || actionValue(actions, DEFAULT_LEAD_KEYS))
+    : actionValue(actions, DEFAULT_LEAD_KEYS)
 
   // Sem breakdown: uma linha por campanha/dia com totais corretos da API.
   // Campos de placement removidos intencionalmente para evitar dupla contagem de reach.
@@ -99,10 +101,12 @@ function buildCampaignMetricRow(clientId, raw, leadActionKey) {
 
 function buildAdMetricRow(clientId, raw, leadActionKey) {
   const actions = raw.actions || []
+  const conversions = raw.conversions || []
   const linkClicks = actionValue(actions, ['link_click']) || toNum(raw.clicks)
   const landingPageViews = actionValue(actions, ['landing_page_view', 'omni_landing_page_view'])
-  const leadKeys = leadActionKey ? [leadActionKey, ...DEFAULT_LEAD_KEYS] : DEFAULT_LEAD_KEYS
-  const leads = actionValue(actions, leadKeys)
+  const leads = leadActionKey
+    ? (actionValue(conversions, [leadActionKey]) || actionValue(actions, DEFAULT_LEAD_KEYS))
+    : actionValue(actions, DEFAULT_LEAD_KEYS)
 
   return {
     client_id: clientId,
@@ -316,7 +320,8 @@ async function fetchMetaInsights(accessToken, adAccountId, options = {}) {
     'reach',
     'clicks',
     'spend',
-    'actions'
+    'actions',
+    'conversions'
   ].join(',')
 
   const params = new URLSearchParams({

@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation'
 import { getSupabaseServerClient } from '@/lib/supabase/server'
 import { getSupabaseAdminClient } from '@/lib/supabase/admin'
-import { createClientAction, refreshAllClientsAction, refreshClientAction, setClientStatusAction } from './actions'
+import { createClientAction, refreshAllClientsAction, refreshClientAction, setClientStatusAction, saveGoogleCredentialsAction } from './actions'
 import { SubmitButton } from '@/app/components/SubmitButton'
 
 type AdminPageProps = {
@@ -20,7 +20,10 @@ const ERROR_MESSAGES: Record<string, string> = {
   client_inactive: 'Este cliente está inativo. Reative-o antes de visualizar.',
   refresh_all_failed: 'Não foi possível atualizar os dados de todos os clientes.',
   refresh_client_failed: 'Não foi possível atualizar os dados deste cliente.',
-  create_client_sync_failed: 'Cliente criado, mas a ingestão automática inicial falhou. Clique em "Atualizar dados" para tentar novamente.'
+  create_client_sync_failed: 'Cliente criado, mas a ingestão automática inicial falhou. Clique em "Atualizar dados" para tentar novamente.',
+  google_missing_fields: 'Preencha Client, Refresh Token e Customer ID do Google.',
+  google_credentials_failed: 'Erro ao salvar credenciais Google.',
+  google_account_failed: 'Erro ao salvar conta Google Ads.',
 }
 
 const SUCCESS_MESSAGES: Record<string, string> = {
@@ -29,7 +32,8 @@ const SUCCESS_MESSAGES: Record<string, string> = {
   client_deactivated: 'Cliente desativado.',
   client_reactivated: 'Cliente reativado.',
   refresh_all_done: 'Atualização de dados concluída para todos os clientes ativos.',
-  refresh_client_done: 'Atualização de dados concluída para o cliente.'
+  refresh_client_done: 'Atualização de dados concluída para o cliente.',
+  google_credentials_saved: 'Credenciais Google salvas com sucesso.',
 }
 
 export default async function AdminPage({ searchParams }: AdminPageProps) {
@@ -257,6 +261,41 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
               </tbody>
             </table>
           </div>
+        </section>
+        {/* Google Ads Credentials */}
+        <section className="panel reveal d5">
+          <h2>Credenciais Google Ads</h2>
+          <p style={{ color: 'var(--text-muted)', fontSize: 13, marginBottom: 16 }}>
+            Configure o Refresh Token e a Conta Google Ads por cliente. As credenciais globais
+            (Developer Token, Client ID, Client Secret) ficam nas variáveis de ambiente.
+          </p>
+          <form action={saveGoogleCredentialsAction} className="filters" style={{ maxWidth: 640 }}>
+            <div className="field">
+              <label htmlFor="g_client_id">Cliente *</label>
+              <select id="g_client_id" name="client_id" required style={{ width: '100%', padding: '8px 10px', borderRadius: 8, background: 'var(--bg-panel)', border: '1px solid var(--border)', color: 'var(--text)', fontSize: 13 }}>
+                <option value="">Selecione o cliente</option>
+                {(clients || []).map((c) => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </select>
+            </div>
+            <div className="field">
+              <label htmlFor="g_refresh_token">Refresh Token OAuth2 *</label>
+              <input id="g_refresh_token" name="refresh_token" placeholder="1//0g..." required />
+            </div>
+            <div className="field">
+              <label htmlFor="g_customer_id">Customer ID (Conta Google Ads) *</label>
+              <input id="g_customer_id" name="customer_id" placeholder="Ex: 123-456-7890" required />
+            </div>
+            <div className="field">
+              <label htmlFor="g_manager_id">Manager Customer ID (MCC, opcional)</label>
+              <input id="g_manager_id" name="manager_customer_id" placeholder="Ex: 987-654-3210" />
+            </div>
+            <div className="field filter-actions">
+              <label>&nbsp;</label>
+              <SubmitButton className="button-custom" label="Salvar Credenciais Google" pendingLabel="Salvando..." />
+            </div>
+          </form>
         </section>
       </div>
     </main>

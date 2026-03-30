@@ -28,7 +28,34 @@ function getCachedMetrics(clientId: string) {
   )()
 }
 
+function getCachedGoogleMetrics(clientId: string) {
+  return unstable_cache(
+    async () => {
+      const { data, error } = await getSupabaseAdminClient()
+        .from('google_daily_campaign_metrics')
+        .select('date,campaign_name,project_tag,impressions,clicks,amount_spent,leads')
+        .eq('client_id', clientId)
+        .order('date', { ascending: false })
+      const mapped = (data || []).map((r) => ({
+        date: r.date,
+        campaign_name: r.campaign_name,
+        project_tag: r.project_tag,
+        reach: 0,
+        impressions: r.impressions ?? 0,
+        amount_spent: r.amount_spent ?? 0,
+        link_clicks: r.clicks ?? 0,
+        landing_page_views: 0,
+        leads: r.leads ?? 0,
+      })) as MetricRow[]
+      return { data: mapped, error }
+    },
+    [`google-metrics:${clientId}`],
+    { revalidate: 120, tags: [`metrics:${clientId}`] }
+  )()
+}
+
 type DashboardView = 'executivo' | 'daily' | 'ads' | 'adsets' | 'creatives'
+type DashboardPlatform = 'meta' | 'google'
 
 type Search = {
   report?: string
@@ -41,6 +68,7 @@ type Search = {
   as?: string
   sync?: 'done' | 'failed'
   sync_reason?: string
+  platform?: DashboardPlatform
 }
 
 type DashboardPageProps = {
@@ -74,6 +102,7 @@ function buildDashboardHref(base: Search, patch: Partial<Search>) {
   const qp = new URLSearchParams()
   const merged: Search = { ...base, ...patch }
 
+  if (merged.platform && merged.platform !== 'meta') qp.set('platform', merged.platform)
   if (merged.report) qp.set('report', merged.report)
   if (merged.view) qp.set('view', merged.view)
   if (merged.tag) qp.set('tag', merged.tag)
@@ -148,9 +177,22 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
     .single()
   const viewingClientName = clientData?.name || null
 
-  const { data: baseRows, error: baseError } = await getCachedMetrics(effectiveClientId)
+  // Verifica se o cliente tem credenciais Google ativas
+  const { data: googleCred } = await getSupabaseAdminClient()
+    .from('client_google_credentials')
+    .select('client_id')
+    .eq('client_id', effectiveClientId)
+    .eq('is_active', true)
+    .maybeSingle()
+  const hasGoogleAds = !!googleCred
 
-  if (baseError) {
+  const selectedPlatform: DashboardPlatform = params.platform === 'google' && hasGoogleAds ? 'google' : 'meta'
+
+  const { data: baseRows, error: baseError } = selectedPlatform === 'google'
+    ? await getCachedGoogleMetrics(effectiveClientId)
+    : await getCachedMetrics(effectiveClientId)
+
+  if (baseError && selectedPlatform === 'meta') {
     return (
       <main className="app-shell page-wrap">
         <section className="panel reveal d2">
@@ -163,7 +205,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
 
   const rows = (baseRows || []) as MetricRow[]
 
-  if (rows.length === 0) {
+  if (rows.length === 0 && selectedPlatform === 'meta') {
     return (
       <main className="app-shell page-wrap">
         <section className="panel reveal d2">
@@ -218,20 +260,26 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   const byDayRows = byDay(filtered)
   const campaignRows = byCampaign(filtered)
 
-  const funnel = [
-    { stage: 'Impressions', value: totals.impressions },
-    { stage: 'Reach', value: totals.reach, rate: totals.impressions > 0 ? totals.reach / totals.impressions : 0 },
-    { stage: 'Link Clicks', value: totals.link_clicks, rate: totals.reach > 0 ? totals.link_clicks / totals.reach : 0 },
-    {
-      stage: 'Landing Page Views',
-      value: totals.landing_page_views,
-      rate: totals.link_clicks > 0 ? totals.landing_page_views / totals.link_clicks : 0
-    },
-    { stage: 'Leads', value: totals.leads, rate: totals.landing_page_views > 0 ? totals.leads / totals.landing_page_views : 0 }
-  ]
+  const funnel = selectedPlatform === 'google'
+    ? [
+        { stage: 'Impressions', value: totals.impressions },
+        { stage: 'Clicks', value: totals.link_clicks, rate: totals.impressions > 0 ? totals.link_clicks / totals.impressions : 0 },
+        { stage: 'Leads', value: totals.leads, rate: totals.link_clicks > 0 ? totals.leads / totals.link_clicks : 0 },
+      ]
+    : [
+        { stage: 'Impressions', value: totals.impressions },
+        { stage: 'Reach', value: totals.reach, rate: totals.impressions > 0 ? totals.reach / totals.impressions : 0 },
+        { stage: 'Link Clicks', value: totals.link_clicks, rate: totals.reach > 0 ? totals.link_clicks / totals.reach : 0 },
+        {
+          stage: 'Landing Page Views',
+          value: totals.landing_page_views,
+          rate: totals.link_clicks > 0 ? totals.landing_page_views / totals.link_clicks : 0
+        },
+        { stage: 'Leads', value: totals.leads, rate: totals.landing_page_views > 0 ? totals.leads / totals.landing_page_views : 0 },
+      ]
 
   const totalFunnelRate = totals.impressions > 0 ? totals.leads / totals.impressions : 0
-  const funnelVisualWidths = [88, 76, 64, 52, 40]
+  const funnelVisualWidths = selectedPlatform === 'google' ? [88, 64, 40] : [88, 76, 64, 52, 40]
   const funnelWithWidth = funnel.map((step, index) => ({
     ...step,
     widthPct: funnelVisualWidths[index] ?? 40,
@@ -246,7 +294,49 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   let creativesTableMissing = false
   const adPublicLinkByName = new Map<string, string>()
 
-  if (needsAdLevelData) {
+  if (needsAdLevelData && selectedPlatform === 'google') {
+    const gAdRes = await getSupabaseAdminClient()
+      .from('google_daily_ad_metrics')
+      .select('date,campaign_name,project_tag,ad_group_name,ad_name,impressions,clicks,amount_spent,leads')
+      .eq('client_id', effectiveClientId)
+      .gte('date', start)
+      .lte('date', end)
+
+    adTableMissing = gAdRes.error?.code === '42P01'
+    const gAdRows = ((gAdRes.data || []) as Array<{
+      date: string; campaign_name: string | null; project_tag: string | null
+      ad_group_name: string | null; ad_name: string | null
+      impressions: number; clicks: number; amount_spent: number; leads: number
+    }>)
+      .filter((r) => {
+        const byTagG = selectedTag
+          ? (r.project_tag || '').toLowerCase().includes(selectedTag.toLowerCase()) ||
+            (r.campaign_name || '').toLowerCase().includes(selectedTag.toLowerCase())
+          : true
+        const byCampaignG = selectedCampaignQuery
+          ? (r.campaign_name || '').toLowerCase().includes(selectedCampaignQuery.toLowerCase())
+          : true
+        return byTagG && byCampaignG
+      })
+      .map((r) => ({
+        date: r.date,
+        campaign_name: r.campaign_name,
+        project_tag: r.project_tag,
+        ad_name: r.ad_name,
+        adset_name: r.ad_group_name,
+        reach: 0,
+        impressions: r.impressions ?? 0,
+        amount_spent: r.amount_spent ?? 0,
+        link_clicks: r.clicks ?? 0,
+        landing_page_views: 0,
+        leads: r.leads ?? 0,
+      })) as AdMetricRow[]
+
+    bestAds = rankByEntity(gAdRows, 'ad_name').slice(0, 20)
+    bestAdsets = rankByEntity(gAdRows, 'adset_name').slice(0, 20)
+  }
+
+  if (needsAdLevelData && selectedPlatform === 'meta') {
     const adRes = await dataClient
       .from('meta_daily_ad_metrics')
       .select('date,campaign_name,project_tag,adset_name,ad_name,reach,impressions,amount_spent,link_clicks,landing_page_views,leads')
@@ -351,6 +441,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   }
 
   const baseHref: Search = {
+    platform: selectedPlatform !== 'meta' ? selectedPlatform : undefined,
     report: selectedReport?.id,
     view: selectedView,
     tag: selectedTag || undefined,
@@ -362,13 +453,21 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
 
   const currentDashboardHref = buildDashboardHref(baseHref, {})
 
-  const viewTabs: Array<{ id: DashboardView; label: string }> = [
-    { id: 'executivo', label: 'Executivo' },
-    { id: 'daily', label: 'Desempenho Diário' },
-    { id: 'ads', label: 'Melhores Anúncios' },
-    { id: 'adsets', label: 'Melhores Conjuntos' },
-    { id: 'creatives', label: 'Criativos' },
-  ]
+  const viewTabs: Array<{ id: DashboardView; label: string }> =
+    selectedPlatform === 'google'
+      ? [
+          { id: 'executivo', label: 'Executivo' },
+          { id: 'daily', label: 'Desempenho Diário' },
+          { id: 'ads', label: 'Melhores Anúncios' },
+          { id: 'adsets', label: 'Melhores Grupos' },
+        ]
+      : [
+          { id: 'executivo', label: 'Executivo' },
+          { id: 'daily', label: 'Desempenho Diário' },
+          { id: 'ads', label: 'Melhores Anúncios' },
+          { id: 'adsets', label: 'Melhores Conjuntos' },
+          { id: 'creatives', label: 'Criativos' },
+        ]
 
   // Dados leves para a tabela diária — campanhas carregadas on-demand via /api/day-detail
   const allDaysData: DayRow[] = selectedView === 'daily'
@@ -509,6 +608,26 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
           </form>
         </section>
 
+        {hasGoogleAds ? (
+          <section className="panel reveal d3">
+            <h2>Plataforma</h2>
+            <div className="report-tabs">
+              <Link
+                href={buildDashboardHref({ ...baseHref, platform: undefined }, { view: 'executivo' })}
+                className={`report-tab ${selectedPlatform === 'meta' ? 'active' : ''}`}
+              >
+                Meta Ads
+              </Link>
+              <Link
+                href={buildDashboardHref({ ...baseHref, platform: 'google' }, { view: 'executivo' })}
+                className={`report-tab ${selectedPlatform === 'google' ? 'active' : ''}`}
+              >
+                Google Ads
+              </Link>
+            </div>
+          </section>
+        ) : null}
+
         <section className="panel reveal d3">
           <h2>Visualizações</h2>
           <div className="report-tabs">
@@ -529,6 +648,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
           <form className="filters" method="get">
             <input type="hidden" name="view" value={selectedView} />
             <input type="hidden" name="report" value={selectedReport?.id || ''} />
+            {selectedPlatform !== 'meta' ? <input type="hidden" name="platform" value={selectedPlatform} /> : null}
             {isAdminView ? <input type="hidden" name="as" value={params.as} /> : null}
 
             <div className="field">
@@ -573,17 +693,31 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
               <h2>A) Painel Executivo</h2>
               <div className="metrics-grid">
                 <div className="metric"><div className="label">Investimento Total</div><div className="value">{fMoney(totals.amount_spent)}</div></div>
-                <div className="metric"><div className="label">Reach</div><div className="value">{fInt(totals.reach)}</div></div>
-                <div className="metric"><div className="label">Impressões</div><div className="value">{fInt(totals.impressions)}</div></div>
-                <div className="metric"><div className="label">Frequência</div><div className="value">{fFloat(totals.frequency)}</div></div>
-                <div className="metric"><div className="label">Link Clicks</div><div className="value">{fInt(totals.link_clicks)}</div></div>
-                <div className="metric"><div className="label">Landing Page Views</div><div className="value">{fInt(totals.landing_page_views)}</div></div>
-                <div className="metric"><div className="label">Leads</div><div className="value">{fInt(totals.leads)}</div></div>
-                <div className="metric"><div className="label">CPC</div><div className="value">{fMoney(totals.cpc)}</div></div>
-                <div className="metric"><div className="label">CPL</div><div className="value">{fMoney(totals.cpl)}</div></div>
-                <div className="metric"><div className="label">CPM</div><div className="value">{fMoney(totals.cpm)}</div></div>
-                <div className="metric"><div className="label">CTR</div><div className="value">{fPct(totals.ctr)}</div></div>
-                <div className="metric"><div className="label">Connect Rate</div><div className="value">{fPct(totals.connect_rate)}</div></div>
+                {selectedPlatform === 'meta' ? (
+                  <>
+                    <div className="metric"><div className="label">Reach</div><div className="value">{fInt(totals.reach)}</div></div>
+                    <div className="metric"><div className="label">Impressões</div><div className="value">{fInt(totals.impressions)}</div></div>
+                    <div className="metric"><div className="label">Frequência</div><div className="value">{fFloat(totals.frequency)}</div></div>
+                    <div className="metric"><div className="label">Link Clicks</div><div className="value">{fInt(totals.link_clicks)}</div></div>
+                    <div className="metric"><div className="label">Landing Page Views</div><div className="value">{fInt(totals.landing_page_views)}</div></div>
+                    <div className="metric"><div className="label">Leads</div><div className="value">{fInt(totals.leads)}</div></div>
+                    <div className="metric"><div className="label">CPC</div><div className="value">{fMoney(totals.cpc)}</div></div>
+                    <div className="metric"><div className="label">CPL</div><div className="value">{fMoney(totals.cpl)}</div></div>
+                    <div className="metric"><div className="label">CPM</div><div className="value">{fMoney(totals.cpm)}</div></div>
+                    <div className="metric"><div className="label">CTR</div><div className="value">{fPct(totals.ctr)}</div></div>
+                    <div className="metric"><div className="label">Connect Rate</div><div className="value">{fPct(totals.connect_rate)}</div></div>
+                  </>
+                ) : (
+                  <>
+                    <div className="metric"><div className="label">Impressões</div><div className="value">{fInt(totals.impressions)}</div></div>
+                    <div className="metric"><div className="label">Clicks</div><div className="value">{fInt(totals.link_clicks)}</div></div>
+                    <div className="metric"><div className="label">Leads</div><div className="value">{fInt(totals.leads)}</div></div>
+                    <div className="metric"><div className="label">CPC</div><div className="value">{fMoney(totals.cpc)}</div></div>
+                    <div className="metric"><div className="label">CPL</div><div className="value">{fMoney(totals.cpl)}</div></div>
+                    <div className="metric"><div className="label">CPM</div><div className="value">{fMoney(totals.cpm)}</div></div>
+                    <div className="metric"><div className="label">CTR</div><div className="value">{fPct(totals.ctr)}</div></div>
+                  </>
+                )}
               </div>
             </section>
 
@@ -603,40 +737,69 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
               <p style={{ marginTop: 8, color: 'var(--text-muted)' }}>Conversão total do funil: {fPct(totalFunnelRate)}</p>
             </section>
 
+
             <section className="panel reveal d6">
               <h2>C) Visão por Campanha</h2>
               <div className="table-wrap">
-                <SortableTable
-                  columns={[
-                    { key: 'name', label: 'Campaign Name' },
-                    { key: 'amount_spent', label: 'Amount Spent' },
-                    { key: 'reach', label: 'Reach' },
-                    { key: 'impressions', label: 'Impressions' },
-                    { key: 'link_clicks', label: 'Link Clicks' },
-                    { key: 'landing_page_views', label: 'Landing Page Views' },
-                    { key: 'leads', label: 'Leads' },
-                    { key: 'cpc', label: 'CPC' },
-                    { key: 'cpl', label: 'CPL' },
-                    { key: 'ctr', label: 'CTR' },
-                    { key: 'cpm', label: 'CPM' },
-                    { key: 'connect_rate', label: 'Connect Rate' },
-                  ]}
-                  rows={campaignRows.map((row) => ({
-                    name: row.campaign_name,
-                    amount_spent: fMoney(row.totals.amount_spent),
-                    reach: fInt(row.totals.reach),
-                    impressions: fInt(row.totals.impressions),
-                    link_clicks: fInt(row.totals.link_clicks),
-                    landing_page_views: fInt(row.totals.landing_page_views),
-                    leads: fInt(row.totals.leads),
-                    cpc: fMoney(row.totals.cpc),
-                    cpl: fMoney(row.totals.cpl),
-                    ctr: fPct(row.totals.ctr),
-                    cpm: fMoney(row.totals.cpm),
-                    connect_rate: fPct(row.totals.connect_rate),
-                  }))}
-                  firstColStyle={{ maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
-                />
+                {selectedPlatform === 'google' ? (
+                  <SortableTable
+                    columns={[
+                      { key: 'name', label: 'Campaign Name' },
+                      { key: 'amount_spent', label: 'Amount Spent' },
+                      { key: 'impressions', label: 'Impressions' },
+                      { key: 'link_clicks', label: 'Clicks' },
+                      { key: 'leads', label: 'Leads' },
+                      { key: 'cpc', label: 'CPC' },
+                      { key: 'cpl', label: 'CPL' },
+                      { key: 'ctr', label: 'CTR' },
+                      { key: 'cpm', label: 'CPM' },
+                    ]}
+                    rows={campaignRows.map((row) => ({
+                      name: row.campaign_name,
+                      amount_spent: fMoney(row.totals.amount_spent),
+                      impressions: fInt(row.totals.impressions),
+                      link_clicks: fInt(row.totals.link_clicks),
+                      leads: fInt(row.totals.leads),
+                      cpc: fMoney(row.totals.cpc),
+                      cpl: fMoney(row.totals.cpl),
+                      ctr: fPct(row.totals.ctr),
+                      cpm: fMoney(row.totals.cpm),
+                    }))}
+                    firstColStyle={{ maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                  />
+                ) : (
+                  <SortableTable
+                    columns={[
+                      { key: 'name', label: 'Campaign Name' },
+                      { key: 'amount_spent', label: 'Amount Spent' },
+                      { key: 'reach', label: 'Reach' },
+                      { key: 'impressions', label: 'Impressions' },
+                      { key: 'link_clicks', label: 'Link Clicks' },
+                      { key: 'landing_page_views', label: 'Landing Page Views' },
+                      { key: 'leads', label: 'Leads' },
+                      { key: 'cpc', label: 'CPC' },
+                      { key: 'cpl', label: 'CPL' },
+                      { key: 'ctr', label: 'CTR' },
+                      { key: 'cpm', label: 'CPM' },
+                      { key: 'connect_rate', label: 'Connect Rate' },
+                    ]}
+                    rows={campaignRows.map((row) => ({
+                      name: row.campaign_name,
+                      amount_spent: fMoney(row.totals.amount_spent),
+                      reach: fInt(row.totals.reach),
+                      impressions: fInt(row.totals.impressions),
+                      link_clicks: fInt(row.totals.link_clicks),
+                      landing_page_views: fInt(row.totals.landing_page_views),
+                      leads: fInt(row.totals.leads),
+                      cpc: fMoney(row.totals.cpc),
+                      cpl: fMoney(row.totals.cpl),
+                      ctr: fPct(row.totals.ctr),
+                      cpm: fMoney(row.totals.cpm),
+                      connect_rate: fPct(row.totals.connect_rate),
+                    }))}
+                    firstColStyle={{ maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                  />
+                )}
               </div>
             </section>
           </>
@@ -657,81 +820,145 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
         {selectedView === 'ads' ? (
           <section className="panel reveal d4">
             <h2>Melhores Anúncios</h2>
-            {adTableMissing ? <p className="error">Tabela <code>meta_daily_ad_metrics</code> não encontrada.</p> : null}
+            {adTableMissing ? (
+              <p className="error">
+                Tabela <code>{selectedPlatform === 'google' ? 'google_daily_ad_metrics' : 'meta_daily_ad_metrics'}</code> não encontrada.
+              </p>
+            ) : null}
             <div className="table-wrap">
-              <SortableTable
-                columns={[
-                  { key: 'name', label: 'Ad Name' },
-                  { key: 'public_link', label: 'Link Público', type: 'link' },
-                  { key: 'amount_spent', label: 'Amount Spent' },
-                  { key: 'reach', label: 'Reach' },
-                  { key: 'impressions', label: 'Impressions' },
-                  { key: 'link_clicks', label: 'Link Clicks' },
-                  { key: 'landing_page_views', label: 'Landing Page Views' },
-                  { key: 'leads', label: 'Leads' },
-                  { key: 'cpc', label: 'CPC' },
-                  { key: 'cpl', label: 'CPL' },
-                  { key: 'ctr', label: 'CTR' },
-                  { key: 'cpm', label: 'CPM' },
-                  { key: 'connect_rate', label: 'Connect Rate' },
-                ]}
-                rows={bestAds.map((row) => ({
-                  name: row.name,
-                  public_link: adPublicLinkByName.get(normalizeEntityKey(row.name)) || '—',
-                  amount_spent: fMoney(row.totals.amount_spent),
-                  reach: fInt(row.totals.reach),
-                  impressions: fInt(row.totals.impressions),
-                  link_clicks: fInt(row.totals.link_clicks),
-                  landing_page_views: fInt(row.totals.landing_page_views),
-                  leads: fInt(row.totals.leads),
-                  cpc: fMoney(row.totals.cpc),
-                  cpl: fMoney(row.totals.cpl),
-                  ctr: fPct(row.totals.ctr),
-                  cpm: fMoney(row.totals.cpm),
-                  connect_rate: fPct(row.totals.connect_rate),
-                }))}
-                firstColStyle={{ maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
-              />
+              {selectedPlatform === 'google' ? (
+                <SortableTable
+                  columns={[
+                    { key: 'name', label: 'Ad Name' },
+                    { key: 'amount_spent', label: 'Amount Spent' },
+                    { key: 'impressions', label: 'Impressions' },
+                    { key: 'link_clicks', label: 'Clicks' },
+                    { key: 'leads', label: 'Leads' },
+                    { key: 'cpc', label: 'CPC' },
+                    { key: 'cpl', label: 'CPL' },
+                    { key: 'ctr', label: 'CTR' },
+                    { key: 'cpm', label: 'CPM' },
+                  ]}
+                  rows={bestAds.map((row) => ({
+                    name: row.name,
+                    amount_spent: fMoney(row.totals.amount_spent),
+                    impressions: fInt(row.totals.impressions),
+                    link_clicks: fInt(row.totals.link_clicks),
+                    leads: fInt(row.totals.leads),
+                    cpc: fMoney(row.totals.cpc),
+                    cpl: fMoney(row.totals.cpl),
+                    ctr: fPct(row.totals.ctr),
+                    cpm: fMoney(row.totals.cpm),
+                  }))}
+                  firstColStyle={{ maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                />
+              ) : (
+                <SortableTable
+                  columns={[
+                    { key: 'name', label: 'Ad Name' },
+                    { key: 'public_link', label: 'Link Público', type: 'link' },
+                    { key: 'amount_spent', label: 'Amount Spent' },
+                    { key: 'reach', label: 'Reach' },
+                    { key: 'impressions', label: 'Impressions' },
+                    { key: 'link_clicks', label: 'Link Clicks' },
+                    { key: 'landing_page_views', label: 'Landing Page Views' },
+                    { key: 'leads', label: 'Leads' },
+                    { key: 'cpc', label: 'CPC' },
+                    { key: 'cpl', label: 'CPL' },
+                    { key: 'ctr', label: 'CTR' },
+                    { key: 'cpm', label: 'CPM' },
+                    { key: 'connect_rate', label: 'Connect Rate' },
+                  ]}
+                  rows={bestAds.map((row) => ({
+                    name: row.name,
+                    public_link: adPublicLinkByName.get(normalizeEntityKey(row.name)) || '—',
+                    amount_spent: fMoney(row.totals.amount_spent),
+                    reach: fInt(row.totals.reach),
+                    impressions: fInt(row.totals.impressions),
+                    link_clicks: fInt(row.totals.link_clicks),
+                    landing_page_views: fInt(row.totals.landing_page_views),
+                    leads: fInt(row.totals.leads),
+                    cpc: fMoney(row.totals.cpc),
+                    cpl: fMoney(row.totals.cpl),
+                    ctr: fPct(row.totals.ctr),
+                    cpm: fMoney(row.totals.cpm),
+                    connect_rate: fPct(row.totals.connect_rate),
+                  }))}
+                  firstColStyle={{ maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                />
+              )}
             </div>
           </section>
         ) : null}
 
         {selectedView === 'adsets' ? (
           <section className="panel reveal d4">
-            <h2>Melhores Conjuntos de Anúncios</h2>
-            {adTableMissing ? <p className="error">Tabela <code>meta_daily_ad_metrics</code> não encontrada.</p> : null}
+            <h2>{selectedPlatform === 'google' ? 'Melhores Grupos de Anúncios' : 'Melhores Conjuntos de Anúncios'}</h2>
+            {adTableMissing ? (
+              <p className="error">
+                Tabela <code>{selectedPlatform === 'google' ? 'google_daily_ad_metrics' : 'meta_daily_ad_metrics'}</code> não encontrada.
+              </p>
+            ) : null}
             <div className="table-wrap">
-              <SortableTable
-                columns={[
-                  { key: 'name', label: 'Ad Set Name' },
-                  { key: 'amount_spent', label: 'Amount Spent' },
-                  { key: 'reach', label: 'Reach' },
-                  { key: 'impressions', label: 'Impressions' },
-                  { key: 'link_clicks', label: 'Link Clicks' },
-                  { key: 'landing_page_views', label: 'Landing Page Views' },
-                  { key: 'leads', label: 'Leads' },
-                  { key: 'cpc', label: 'CPC' },
-                  { key: 'cpl', label: 'CPL' },
-                  { key: 'ctr', label: 'CTR' },
-                  { key: 'cpm', label: 'CPM' },
-                  { key: 'connect_rate', label: 'Connect Rate' },
-                ]}
-                rows={bestAdsets.map((row) => ({
-                  name: row.name,
-                  amount_spent: fMoney(row.totals.amount_spent),
-                  reach: fInt(row.totals.reach),
-                  impressions: fInt(row.totals.impressions),
-                  link_clicks: fInt(row.totals.link_clicks),
-                  landing_page_views: fInt(row.totals.landing_page_views),
-                  leads: fInt(row.totals.leads),
-                  cpc: fMoney(row.totals.cpc),
-                  cpl: fMoney(row.totals.cpl),
-                  ctr: fPct(row.totals.ctr),
-                  cpm: fMoney(row.totals.cpm),
-                  connect_rate: fPct(row.totals.connect_rate),
-                }))}
-                firstColStyle={{ maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
-              />
+              {selectedPlatform === 'google' ? (
+                <SortableTable
+                  columns={[
+                    { key: 'name', label: 'Ad Group Name' },
+                    { key: 'amount_spent', label: 'Amount Spent' },
+                    { key: 'impressions', label: 'Impressions' },
+                    { key: 'link_clicks', label: 'Clicks' },
+                    { key: 'leads', label: 'Leads' },
+                    { key: 'cpc', label: 'CPC' },
+                    { key: 'cpl', label: 'CPL' },
+                    { key: 'ctr', label: 'CTR' },
+                    { key: 'cpm', label: 'CPM' },
+                  ]}
+                  rows={bestAdsets.map((row) => ({
+                    name: row.name,
+                    amount_spent: fMoney(row.totals.amount_spent),
+                    impressions: fInt(row.totals.impressions),
+                    link_clicks: fInt(row.totals.link_clicks),
+                    leads: fInt(row.totals.leads),
+                    cpc: fMoney(row.totals.cpc),
+                    cpl: fMoney(row.totals.cpl),
+                    ctr: fPct(row.totals.ctr),
+                    cpm: fMoney(row.totals.cpm),
+                  }))}
+                  firstColStyle={{ maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                />
+              ) : (
+                <SortableTable
+                  columns={[
+                    { key: 'name', label: 'Ad Set Name' },
+                    { key: 'amount_spent', label: 'Amount Spent' },
+                    { key: 'reach', label: 'Reach' },
+                    { key: 'impressions', label: 'Impressions' },
+                    { key: 'link_clicks', label: 'Link Clicks' },
+                    { key: 'landing_page_views', label: 'Landing Page Views' },
+                    { key: 'leads', label: 'Leads' },
+                    { key: 'cpc', label: 'CPC' },
+                    { key: 'cpl', label: 'CPL' },
+                    { key: 'ctr', label: 'CTR' },
+                    { key: 'cpm', label: 'CPM' },
+                    { key: 'connect_rate', label: 'Connect Rate' },
+                  ]}
+                  rows={bestAdsets.map((row) => ({
+                    name: row.name,
+                    amount_spent: fMoney(row.totals.amount_spent),
+                    reach: fInt(row.totals.reach),
+                    impressions: fInt(row.totals.impressions),
+                    link_clicks: fInt(row.totals.link_clicks),
+                    landing_page_views: fInt(row.totals.landing_page_views),
+                    leads: fInt(row.totals.leads),
+                    cpc: fMoney(row.totals.cpc),
+                    cpl: fMoney(row.totals.cpl),
+                    ctr: fPct(row.totals.ctr),
+                    cpm: fMoney(row.totals.cpm),
+                    connect_rate: fPct(row.totals.connect_rate),
+                  }))}
+                  firstColStyle={{ maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                />
+              )}
             </div>
           </section>
         ) : null}

@@ -152,6 +152,47 @@ export async function refreshClientAction(formData: FormData) {
   redirect(failed ? '/admin?error=refresh_client_failed' : '/admin?success=refresh_client_done')
 }
 
+export async function saveGoogleCredentialsAction(formData: FormData) {
+  await requireAdmin()
+
+  const clientId = String(formData.get('client_id') || '').trim()
+  const refreshToken = String(formData.get('refresh_token') || '').trim()
+  const customerId = String(formData.get('customer_id') || '').trim()
+  const managerCustomerId = String(formData.get('manager_customer_id') || '').trim()
+
+  if (!clientId || !refreshToken || !customerId) {
+    redirect('/admin?error=google_missing_fields')
+  }
+
+  const admin = getSupabaseAdminClient()
+
+  const { error: credError } = await admin.from('client_google_credentials').upsert({
+    client_id: clientId,
+    refresh_token: encrypt(refreshToken),
+    manager_customer_id: managerCustomerId || null,
+    is_active: true,
+  }, { onConflict: 'client_id' })
+
+  if (credError) {
+    console.error('[saveGoogleCredentialsAction] credentials:', credError)
+    redirect('/admin?error=google_credentials_failed')
+  }
+
+  const { error: accountError } = await admin.from('client_google_ad_accounts').upsert({
+    client_id: clientId,
+    customer_id: customerId.replace(/-/g, ''),
+    label: 'Conta Principal',
+    is_active: true,
+  }, { onConflict: 'client_id,customer_id' })
+
+  if (accountError) {
+    console.error('[saveGoogleCredentialsAction] account:', accountError)
+    redirect('/admin?error=google_account_failed')
+  }
+
+  redirect('/admin?success=google_credentials_saved')
+}
+
 export async function setClientStatusAction(formData: FormData) {
   await requireAdmin()
 

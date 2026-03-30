@@ -8,6 +8,7 @@ const APP_BASE_URL =
   (process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || '').trim().replace(/\/$/, '')
 const META_API_VERSION = process.env.META_API_VERSION || 'v21.0'
 const META_DATE_PRESET = process.env.META_DATE_PRESET || 'last_30d'
+const META_DAYS_BACK = Number(process.env.META_DAYS_BACK || '0')
 const META_LEVEL = process.env.META_LEVEL || 'campaign'
 const META_AD_LEVEL = process.env.META_AD_LEVEL || 'ad'
 const META_TIME_INCREMENT = process.env.META_TIME_INCREMENT || '1'
@@ -324,6 +325,50 @@ async function fetchMetaInsights(accessToken, adAccountId, options = {}) {
     'conversions'
   ].join(',')
 
+  // Se META_DAYS_BACK estiver configurado, divide em chunks de 90 dias (só para campaign)
+  if (META_DAYS_BACK > 0 && !options.skipChunking) {
+    const allRows = []
+    const chunkDays = 90
+    const now = new Date()
+    let chunkEnd = new Date(now)
+
+    while (true) {
+      const chunkStart = new Date(chunkEnd.getTime() - chunkDays * 86400 * 1000)
+      const globalStart = new Date(now.getTime() - META_DAYS_BACK * 86400 * 1000)
+      const since = (chunkStart < globalStart ? globalStart : chunkStart).toISOString().slice(0, 10)
+      const until = chunkEnd.toISOString().slice(0, 10)
+
+      const chunkParams = new URLSearchParams({
+        access_token: accessToken,
+        level,
+        fields,
+        limit: String(META_LIMIT),
+        time_increment: String(timeIncrement),
+        time_range: JSON.stringify({ since, until })
+      })
+      if (Array.isArray(breakdowns) && breakdowns.length > 0) {
+        chunkParams.set('breakdowns', breakdowns.join(','))
+      }
+
+      let url = `${baseUrl}?${chunkParams.toString()}`
+      while (url) {
+        const resp = await fetch(url)
+        const payload = await resp.json()
+        if (!resp.ok || payload.error) {
+          const message = payload?.error?.message || `HTTP ${resp.status}`
+          throw new Error(`Meta API error for account ${adAccountId}: ${message}`)
+        }
+        for (const item of payload.data || []) allRows.push(item)
+        url = payload?.paging?.next || null
+      }
+
+      if (chunkStart <= globalStart) break
+      chunkEnd = new Date(chunkStart.getTime() - 86400 * 1000) // recua 1 dia para não sobrepor
+    }
+
+    return allRows
+  }
+
   const params = new URLSearchParams({
     access_token: accessToken,
     level,
@@ -425,7 +470,8 @@ async function main() {
 
           const adInsights = await fetchMetaInsights(accessToken, adAccountId, {
             level: META_AD_LEVEL,
-            breakdowns: []
+            breakdowns: [],
+            skipChunking: true  // ad-level: muitos ads × dias, usa date_preset padrão
           })
           for (const row of adInsights) adRows.push(buildAdMetricRow(clientId, row, leadActionKey))
         } catch (err) {

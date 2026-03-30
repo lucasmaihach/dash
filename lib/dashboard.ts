@@ -8,6 +8,12 @@ export type MetricRow = {
   link_clicks: number
   landing_page_views: number
   leads: number
+  follows?: number
+  reactions?: number
+  comments_count?: number
+  shares?: number
+  saves?: number
+  post_engagement?: number
 }
 
 export type Totals = {
@@ -24,6 +30,13 @@ export type Totals = {
   ctr: number
   connect_rate: number
   cost_per_lpv: number
+  follows: number
+  reactions: number
+  comments_count: number
+  shares: number
+  saves: number
+  post_engagement: number
+  cost_per_follow: number
 }
 
 function safeDiv(num: number, den: number): number {
@@ -37,6 +50,12 @@ export function consolidate(rows: MetricRow[]): Totals {
   const link_clicks = rows.reduce((acc, r) => acc + (r.link_clicks || 0), 0)
   const landing_page_views = rows.reduce((acc, r) => acc + (r.landing_page_views || 0), 0)
   const leads = rows.reduce((acc, r) => acc + (r.leads || 0), 0)
+  const follows = rows.reduce((acc, r) => acc + (r.follows || 0), 0)
+  const reactions = rows.reduce((acc, r) => acc + (r.reactions || 0), 0)
+  const comments_count = rows.reduce((acc, r) => acc + (r.comments_count || 0), 0)
+  const shares = rows.reduce((acc, r) => acc + (r.shares || 0), 0)
+  const saves = rows.reduce((acc, r) => acc + (r.saves || 0), 0)
+  const post_engagement = rows.reduce((acc, r) => acc + (r.post_engagement || 0), 0)
 
   return {
     amount_spent,
@@ -51,7 +70,14 @@ export function consolidate(rows: MetricRow[]): Totals {
     cpm: safeDiv(amount_spent, impressions) * 1000,
     ctr: safeDiv(link_clicks, impressions),
     connect_rate: safeDiv(landing_page_views, link_clicks),
-    cost_per_lpv: safeDiv(amount_spent, landing_page_views)
+    cost_per_lpv: safeDiv(amount_spent, landing_page_views),
+    follows,
+    reactions,
+    comments_count,
+    shares,
+    saves,
+    post_engagement,
+    cost_per_follow: safeDiv(amount_spent, follows),
   }
 }
 

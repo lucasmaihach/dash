@@ -74,6 +74,17 @@ function actionValue(actions, keys) {
 
 const DEFAULT_LEAD_KEYS = ['lead', 'offsite_conversion.fb_pixel_lead', 'onsite_web_lead']
 
+function buildEngagementFields(actions) {
+  return {
+    follows: actionValue(actions, ['onsite_conversion.follow']),
+    reactions: actionValue(actions, ['post_reaction']),
+    comments_count: actionValue(actions, ['comment']),
+    shares: actionValue(actions, ['post']),
+    saves: actionValue(actions, ['onsite_conversion.post_save']),
+    post_engagement: actionValue(actions, ['post_engagement']),
+  }
+}
+
 function buildCampaignMetricRow(clientId, raw, leadActionKey) {
   const actions = raw.actions || []
   const conversions = raw.conversions || []
@@ -96,7 +107,8 @@ function buildCampaignMetricRow(clientId, raw, leadActionKey) {
     link_clicks: linkClicks,
     landing_page_views: landingPageViews,
     leads: leads,
-    account_name: raw.account_name || null
+    account_name: raw.account_name || null,
+    ...buildEngagementFields(actions),
   }
 }
 
@@ -124,7 +136,8 @@ function buildAdMetricRow(clientId, raw, leadActionKey) {
     link_clicks: linkClicks,
     landing_page_views: landingPageViews,
     leads: leads,
-    account_name: raw.account_name || null
+    account_name: raw.account_name || null,
+    ...buildEngagementFields(actions),
   }
 }
 

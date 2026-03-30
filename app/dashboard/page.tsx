@@ -18,7 +18,7 @@ function getCachedMetrics(clientId: string) {
     async () => {
       const { data, error } = await getSupabaseAdminClient()
         .from('meta_daily_campaign_metrics')
-        .select('date,campaign_name,project_tag,reach,impressions,amount_spent,link_clicks,landing_page_views,leads')
+        .select('date,campaign_name,project_tag,reach,impressions,amount_spent,link_clicks,landing_page_views,leads,follows,reactions,comments_count,shares,saves,post_engagement')
         .eq('client_id', clientId)
         .order('date', { ascending: false })
       return { data: (data || []) as MetricRow[], error }
@@ -54,7 +54,7 @@ function getCachedGoogleMetrics(clientId: string) {
   )()
 }
 
-type DashboardView = 'executivo' | 'daily' | 'ads' | 'adsets' | 'creatives'
+type DashboardView = 'executivo' | 'daily' | 'ads' | 'adsets' | 'creatives' | 'seguidores'
 type DashboardPlatform = 'meta' | 'google'
 
 type Search = {
@@ -286,7 +286,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
     transitionRate: index === 0 ? null : step.rate || 0
   }))
 
-  const needsAdLevelData = selectedView === 'ads' || selectedView === 'adsets' || selectedView === 'creatives'
+  const needsAdLevelData = selectedView === 'ads' || selectedView === 'adsets' || selectedView === 'creatives' || selectedView === 'seguidores'
   let adTableMissing = false
   let bestAds: Array<{ name: string; totals: ReturnType<typeof consolidate> }> = []
   let bestAdsets: Array<{ name: string; totals: ReturnType<typeof consolidate> }> = []
@@ -339,7 +339,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   if (needsAdLevelData && selectedPlatform === 'meta') {
     const adRes = await dataClient
       .from('meta_daily_ad_metrics')
-      .select('date,campaign_name,project_tag,adset_name,ad_name,reach,impressions,amount_spent,link_clicks,landing_page_views,leads')
+      .select('date,campaign_name,project_tag,adset_name,ad_name,reach,impressions,amount_spent,link_clicks,landing_page_views,leads,follows,reactions,comments_count,shares,saves,post_engagement')
       .eq('client_id', effectiveClientId)
       .gte('date', start)
       .lte('date', end)
@@ -464,6 +464,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
       : [
           { id: 'executivo', label: 'Executivo' },
           { id: 'daily', label: 'Desempenho Diário' },
+          { id: 'seguidores', label: 'Seguidores' },
           { id: 'ads', label: 'Melhores Anúncios' },
           { id: 'adsets', label: 'Melhores Conjuntos' },
           { id: 'creatives', label: 'Criativos' },
@@ -978,6 +979,123 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
               <AdCreativesGrid cards={creativeCards} />
             )}
           </section>
+        ) : null}
+
+        {selectedView === 'seguidores' ? (
+          <>
+            <section className="panel reveal d4">
+              <h2>A) Painel de Seguidores</h2>
+              <div className="metrics-grid">
+                <div className="metric"><div className="label">Investimento Total</div><div className="value">{fMoney(totals.amount_spent)}</div></div>
+                <div className="metric"><div className="label">Seguidores Ganhos</div><div className="value">{fInt(totals.follows)}</div></div>
+                <div className="metric"><div className="label">Custo por Seguidor</div><div className="value">{fMoney(totals.cost_per_follow)}</div></div>
+                <div className="metric"><div className="label">Curtidas / Reações</div><div className="value">{fInt(totals.reactions)}</div></div>
+                <div className="metric"><div className="label">Comentários</div><div className="value">{fInt(totals.comments_count)}</div></div>
+                <div className="metric"><div className="label">Compartilhamentos</div><div className="value">{fInt(totals.shares)}</div></div>
+                <div className="metric"><div className="label">Salvamentos</div><div className="value">{fInt(totals.saves)}</div></div>
+                <div className="metric"><div className="label">Engajamento Total</div><div className="value">{fInt(totals.post_engagement)}</div></div>
+                <div className="metric"><div className="label">Impressões</div><div className="value">{fInt(totals.impressions)}</div></div>
+                <div className="metric"><div className="label">Alcance</div><div className="value">{fInt(totals.reach)}</div></div>
+                <div className="metric"><div className="label">CPM</div><div className="value">{fMoney(totals.cpm)}</div></div>
+                <div className="metric"><div className="label">Frequência</div><div className="value">{fFloat(totals.frequency)}</div></div>
+              </div>
+            </section>
+
+            <section className="panel reveal d5">
+              <h2>B) Funil de Seguidores</h2>
+              <div className="funnel-shape">
+                {[
+                  { stage: 'Impressões', value: totals.impressions, widthPct: 88, transitionRate: null },
+                  { stage: 'Alcance', value: totals.reach, widthPct: 64, transitionRate: totals.impressions > 0 ? totals.reach / totals.impressions : 0 },
+                  { stage: 'Seguidores', value: totals.follows, widthPct: 40, transitionRate: totals.reach > 0 ? totals.follows / totals.reach : 0 },
+                ].map((step, index) => (
+                  <div className="funnel-row" key={step.stage}>
+                    <div className="funnel-bar" style={{ width: `${step.widthPct}%` }}>
+                      <span className="funnel-title">{step.stage}</span>
+                      <span className="funnel-value">{fInt(step.value)}</span>
+                      {index > 0 ? <span className="funnel-rate">Taxa: {fPct(step.transitionRate || 0)}</span> : <span />}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <p style={{ marginTop: 8, color: 'var(--text-muted)' }}>
+                Taxa de conversão total (Impressões → Seguidores): {fPct(totals.impressions > 0 ? totals.follows / totals.impressions : 0)}
+              </p>
+            </section>
+
+            <section className="panel reveal d6">
+              <h2>C) Engajamento por Campanha</h2>
+              <div className="table-wrap">
+                <SortableTable
+                  columns={[
+                    { key: 'name', label: 'Campanha' },
+                    { key: 'amount_spent', label: 'Investimento' },
+                    { key: 'follows', label: 'Seguidores' },
+                    { key: 'cost_per_follow', label: 'Custo/Seguidor' },
+                    { key: 'reactions', label: 'Curtidas' },
+                    { key: 'comments_count', label: 'Comentários' },
+                    { key: 'shares', label: 'Compartilhamentos' },
+                    { key: 'saves', label: 'Salvamentos' },
+                    { key: 'post_engagement', label: 'Engajamento Total' },
+                    { key: 'impressions', label: 'Impressões' },
+                    { key: 'reach', label: 'Alcance' },
+                    { key: 'cpm', label: 'CPM' },
+                  ]}
+                  rows={campaignRows.map((row) => ({
+                    name: row.campaign_name,
+                    amount_spent: fMoney(row.totals.amount_spent),
+                    follows: fInt(row.totals.follows),
+                    cost_per_follow: fMoney(row.totals.cost_per_follow),
+                    reactions: fInt(row.totals.reactions),
+                    comments_count: fInt(row.totals.comments_count),
+                    shares: fInt(row.totals.shares),
+                    saves: fInt(row.totals.saves),
+                    post_engagement: fInt(row.totals.post_engagement),
+                    impressions: fInt(row.totals.impressions),
+                    reach: fInt(row.totals.reach),
+                    cpm: fMoney(row.totals.cpm),
+                  }))}
+                  firstColStyle={{ maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                />
+              </div>
+            </section>
+
+            <section className="panel reveal d6">
+              <h2>D) Engajamento por Anúncio</h2>
+              {adTableMissing ? <p className="error">Tabela <code>meta_daily_ad_metrics</code> não encontrada.</p> : null}
+              <div className="table-wrap">
+                <SortableTable
+                  columns={[
+                    { key: 'name', label: 'Anúncio' },
+                    { key: 'amount_spent', label: 'Investimento' },
+                    { key: 'follows', label: 'Seguidores' },
+                    { key: 'cost_per_follow', label: 'Custo/Seguidor' },
+                    { key: 'reactions', label: 'Curtidas' },
+                    { key: 'comments_count', label: 'Comentários' },
+                    { key: 'shares', label: 'Compartilhamentos' },
+                    { key: 'saves', label: 'Salvamentos' },
+                    { key: 'post_engagement', label: 'Engajamento Total' },
+                    { key: 'impressions', label: 'Impressões' },
+                    { key: 'reach', label: 'Alcance' },
+                  ]}
+                  rows={bestAds.map((row) => ({
+                    name: row.name,
+                    amount_spent: fMoney(row.totals.amount_spent),
+                    follows: fInt(row.totals.follows),
+                    cost_per_follow: fMoney(row.totals.cost_per_follow),
+                    reactions: fInt(row.totals.reactions),
+                    comments_count: fInt(row.totals.comments_count),
+                    shares: fInt(row.totals.shares),
+                    saves: fInt(row.totals.saves),
+                    post_engagement: fInt(row.totals.post_engagement),
+                    impressions: fInt(row.totals.impressions),
+                    reach: fInt(row.totals.reach),
+                  }))}
+                  firstColStyle={{ maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                />
+              </div>
+            </section>
+          </>
         ) : null}
       </div>
     </main>

@@ -71,11 +71,14 @@ function actionValue(actions, keys) {
   return 0
 }
 
-function buildCampaignMetricRow(clientId, raw) {
+const DEFAULT_LEAD_KEYS = ['lead', 'offsite_conversion.fb_pixel_lead', 'onsite_web_lead']
+
+function buildCampaignMetricRow(clientId, raw, leadActionKey) {
   const actions = raw.actions || []
   const linkClicks = actionValue(actions, ['link_click']) || toNum(raw.clicks)
   const landingPageViews = actionValue(actions, ['landing_page_view', 'omni_landing_page_view'])
-  const leads = actionValue(actions, ['lead', 'offsite_conversion.fb_pixel_lead', 'onsite_web_lead'])
+  const leadKeys = leadActionKey ? [leadActionKey, ...DEFAULT_LEAD_KEYS] : DEFAULT_LEAD_KEYS
+  const leads = actionValue(actions, leadKeys)
 
   // Sem breakdown: uma linha por campanha/dia com totais corretos da API.
   // Campos de placement removidos intencionalmente para evitar dupla contagem de reach.
@@ -94,11 +97,12 @@ function buildCampaignMetricRow(clientId, raw) {
   }
 }
 
-function buildAdMetricRow(clientId, raw) {
+function buildAdMetricRow(clientId, raw, leadActionKey) {
   const actions = raw.actions || []
   const linkClicks = actionValue(actions, ['link_click']) || toNum(raw.clicks)
   const landingPageViews = actionValue(actions, ['landing_page_view', 'omni_landing_page_view'])
-  const leads = actionValue(actions, ['lead', 'offsite_conversion.fb_pixel_lead', 'onsite_web_lead'])
+  const leadKeys = leadActionKey ? [leadActionKey, ...DEFAULT_LEAD_KEYS] : DEFAULT_LEAD_KEYS
+  const leads = actionValue(actions, leadKeys)
 
   return {
     client_id: clientId,
@@ -355,6 +359,8 @@ async function main() {
 
   const credentials = await supabaseGet('client_meta_credentials?select=client_id,access_token,is_active&is_active=eq.true')
   const accounts = await supabaseGet('client_ad_accounts?select=client_id,ad_account_id,is_active&is_active=eq.true')
+  const clientConfigs = await supabaseGet('clients?select=id,lead_action_key')
+  const leadActionKeyByClient = new Map(clientConfigs.map((c) => [c.id, c.lead_action_key || null]))
 
   const tokenByClient = new Map()
 
@@ -400,6 +406,9 @@ async function main() {
       const adRows = []
       let insightsFailedAccounts = 0
 
+      const leadActionKey = leadActionKeyByClient.get(clientId) || null
+      if (leadActionKey) console.log(`client ${clientId}: using custom lead action key "${leadActionKey}"`)
+
       for (const adAccountId of clientAccounts) {
         try {
           // Sem breakdowns: garante um total único por campanha/dia com reach correto
@@ -407,13 +416,13 @@ async function main() {
             level: META_LEVEL,
             breakdowns: []
           })
-          for (const row of campaignInsights) campaignRows.push(buildCampaignMetricRow(clientId, row))
+          for (const row of campaignInsights) campaignRows.push(buildCampaignMetricRow(clientId, row, leadActionKey))
 
           const adInsights = await fetchMetaInsights(accessToken, adAccountId, {
             level: META_AD_LEVEL,
             breakdowns: []
           })
-          for (const row of adInsights) adRows.push(buildAdMetricRow(clientId, row))
+          for (const row of adInsights) adRows.push(buildAdMetricRow(clientId, row, leadActionKey))
         } catch (err) {
           insightsFailedAccounts++
           console.warn(`  account ${adAccountId}: insights fetch failed — ${err.message}`)

@@ -499,8 +499,19 @@ async function main() {
         throw new Error('all ad accounts failed while fetching insights')
       }
 
-      await supabaseUpsert('meta_daily_campaign_metrics', campaignRows, 'client_id,date,campaign_name,project_tag')
-      totalSent += campaignRows.length
+      // Deduplica por chave de conflito — soma métricas de linhas com mesma campanha/data
+      const campaignMap = new Map()
+      for (const row of campaignRows) {
+        const key = `${row.date}|${row.campaign_name}|${row.project_tag}`
+        if (!campaignMap.has(key)) { campaignMap.set(key, { ...row }); continue }
+        const existing = campaignMap.get(key)
+        for (const field of ['reach','impressions','amount_spent','link_clicks','landing_page_views','leads','follows','reactions','comments_count','shares','saves','post_engagement']) {
+          existing[field] = (existing[field] || 0) + (row[field] || 0)
+        }
+      }
+      const dedupedCampaignRows = [...campaignMap.values()]
+      await supabaseUpsert('meta_daily_campaign_metrics', dedupedCampaignRows, 'client_id,date,campaign_name,project_tag')
+      totalSent += dedupedCampaignRows.length
 
       let upsertedAdRows = 0
       try {

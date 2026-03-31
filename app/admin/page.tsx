@@ -21,7 +21,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   refresh_all_failed: 'Não foi possível atualizar os dados de todos os clientes.',
   refresh_client_failed: 'Não foi possível atualizar os dados deste cliente.',
   create_client_sync_failed: 'Cliente criado, mas a ingestão automática inicial falhou. Clique em "Atualizar dados" para tentar novamente.',
-  google_missing_fields: 'Preencha Client, Refresh Token e Customer ID do Google.',
+  google_missing_fields: 'Preencha Cliente, Refresh Token e Customer ID do Google.',
   google_credentials_failed: 'Erro ao salvar credenciais Google.',
   google_account_failed: 'Erro ao salvar conta Google Ads.',
 }
@@ -40,10 +40,7 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
   const params = await searchParams
 
   const supabase = await getSupabaseServerClient()
-  const {
-    data: { user }
-  } = await supabase.auth.getUser()
-
+  const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
   const { data: profile } = await supabase
@@ -56,24 +53,23 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
 
   const admin = getSupabaseAdminClient()
 
-  const [{ data: clients }, { data: profiles }, { data: adAccounts }, { data: authUsers }] =
+  const [{ data: clients }, { data: profiles }, { data: adAccounts }, { data: googleCreds }, { data: authUsers }] =
     await Promise.all([
       admin.from('clients').select('id,name,status,created_at').order('created_at', { ascending: false }),
       admin.from('profiles').select('id,client_id,full_name,role'),
       admin.from('client_ad_accounts').select('client_id,ad_account_id,label,is_active'),
+      admin.from('client_google_credentials').select('client_id,is_active'),
       admin.auth.admin.listUsers()
     ])
 
-  const userEmailMap = new Map(
-    (authUsers?.users || []).map((u) => [u.id, u.email || ''])
-  )
+  const userEmailMap = new Map((authUsers?.users || []).map((u) => [u.id, u.email || '']))
+  const googleClientIds = new Set((googleCreds || []).filter(g => g.is_active).map(g => g.client_id))
 
   const clientsWithData = (clients || []).map((c) => ({
     ...c,
-    users: (profiles || [])
-      .filter((p) => p.client_id === c.id)
-      .map((p) => ({ ...p, email: userEmailMap.get(p.id) || '' })),
-    accounts: (adAccounts || []).filter((a) => a.client_id === c.id)
+    users: (profiles || []).filter((p) => p.client_id === c.id).map((p) => ({ ...p, email: userEmailMap.get(p.id) || '' })),
+    accounts: (adAccounts || []).filter((a) => a.client_id === c.id),
+    hasGoogle: googleClientIds.has(c.id),
   }))
 
   const errorMsg = params.error ? (ERROR_MESSAGES[params.error] ?? 'Erro desconhecido.') : null
@@ -98,7 +94,7 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
       <div className="page-wrap">
         <section className="hero reveal d2">
           <h1>Gerenciar Clientes</h1>
-          <p>Cadastre novos clientes ou altere o status dos existentes.</p>
+          <p>Cadastre novos clientes ou gerencie os existentes.</p>
         </section>
 
         {errorMsg ? (
@@ -106,193 +102,199 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
             <p className="error">{errorMsg}</p>
           </section>
         ) : null}
-
         {successMsg ? (
           <section className="panel reveal d3">
             <p style={{ color: '#4ade80', fontWeight: 600 }}>{successMsg}</p>
           </section>
         ) : null}
 
-        {/* Novo cliente */}
+        {/* Novo cliente — Meta + Google unificados */}
         <section className="panel reveal d3">
           <h2>Novo Cliente</h2>
-          <form action={createClientAction} className="filters" style={{ maxWidth: 640 }}>
-            <div className="field">
-              <label htmlFor="name">Nome do cliente *</label>
-              <input id="name" name="name" placeholder="Ex: Empresa XYZ" required />
+          <form action={createClientAction} style={{ marginTop: 20 }}>
+
+            {/* Bloco: Dados do Cliente */}
+            <div style={{ marginBottom: 24 }}>
+              <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: 14 }}>
+                Dados do Cliente
+              </p>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <div className="field">
+                  <label htmlFor="name">Nome do cliente *</label>
+                  <input id="name" name="name" placeholder="Ex: Empresa XYZ" required />
+                </div>
+                <div className="field">
+                  <label htmlFor="full_name">Nome do usuário</label>
+                  <input id="full_name" name="full_name" placeholder="Ex: João Silva" />
+                </div>
+                <div className="field">
+                  <label htmlFor="email">Email de acesso *</label>
+                  <input id="email" name="email" type="email" placeholder="cliente@empresa.com" required />
+                </div>
+                <div className="field">
+                  <label htmlFor="password">Senha inicial *</label>
+                  <input id="password" name="password" type="password" placeholder="Mínimo 6 caracteres" required />
+                </div>
+              </div>
             </div>
-            <div className="field">
-              <label htmlFor="full_name">Nome do usuário</label>
-              <input id="full_name" name="full_name" placeholder="Ex: João Silva" />
+
+            {/* Bloco: Meta Ads */}
+            <div style={{ marginBottom: 24, paddingTop: 20, borderTop: '1px solid var(--border)' }}>
+              <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', color: '#1877f2', textTransform: 'uppercase', marginBottom: 14 }}>
+                Meta Ads
+              </p>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <div className="field" style={{ gridColumn: '1 / -1' }}>
+                  <label htmlFor="access_token">Access Token *</label>
+                  <input id="access_token" name="access_token" placeholder="EAAxxxxxxx..." required />
+                </div>
+                <div className="field">
+                  <label htmlFor="ad_account_id">ID da Conta de Anúncios *</label>
+                  <input id="ad_account_id" name="ad_account_id" placeholder="Ex: 123456789012345" required />
+                </div>
+                <div className="field">
+                  <label htmlFor="account_label">Label da conta</label>
+                  <input id="account_label" name="account_label" placeholder="Conta Principal" />
+                </div>
+              </div>
             </div>
-            <div className="field">
-              <label htmlFor="email">Email de acesso *</label>
-              <input id="email" name="email" type="email" placeholder="cliente@empresa.com" required />
-            </div>
-            <div className="field">
-              <label htmlFor="password">Senha inicial *</label>
-              <input id="password" name="password" type="password" placeholder="Mínimo 6 caracteres" required />
-            </div>
-            <div className="field">
-              <label htmlFor="access_token">Token Meta (Access Token) *</label>
-              <input id="access_token" name="access_token" placeholder="EAAxxxxxxx..." required />
-            </div>
-            <div className="field">
-              <label htmlFor="ad_account_id">ID da Conta de Anúncios *</label>
-              <input id="ad_account_id" name="ad_account_id" placeholder="Ex: 123456789012345" required />
-            </div>
-            <div className="field">
-              <label htmlFor="account_label">Label da conta</label>
-              <input id="account_label" name="account_label" placeholder="Conta Principal" />
-            </div>
-            <div className="field filter-actions">
-              <label>&nbsp;</label>
-              <SubmitButton className="button-custom" label="Criar Cliente" pendingLabel="Criando + atualizando dados..." />
+
+            <div style={{ paddingTop: 16 }}>
+              <SubmitButton className="button-custom" label="Criar Cliente" pendingLabel="Criando + sincronizando dados..." />
             </div>
           </form>
         </section>
 
+        {/* Lista de Clientes */}
         <section className="panel reveal d4">
-          <h2>Atualização de Dados</h2>
-          <p style={{ color: 'var(--text-muted)', fontSize: 13, marginBottom: 12 }}>
-            Executa a ingestão da Meta API para atualizar métricas e criativos.
-          </p>
-          <form action={refreshAllClientsAction}>
-            <SubmitButton
-              label="Atualizar todos os clientes"
-              pendingLabel="Atualizando todos..."
-              className="button-secondary"
-              style={{ fontSize: 12, padding: '6px 12px' }}
-            />
-          </form>
-        </section>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+            <h2 style={{ margin: 0 }}>Clientes ({clientsWithData.length})</h2>
+            <form action={refreshAllClientsAction}>
+              <SubmitButton
+                label="↻ Atualizar todos"
+                pendingLabel="Atualizando..."
+                className="button-secondary"
+                style={{ fontSize: 12, padding: '6px 14px' }}
+              />
+            </form>
+          </div>
 
-        {/* Lista de clientes */}
-        <section className="panel reveal d4">
-          <h2>Clientes ({clientsWithData.length})</h2>
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Nome</th>
-                  <th>Status</th>
-                  <th>Usuários</th>
-                  <th>Contas de Anúncios</th>
-                  <th>Criado em</th>
-                  <th>Ação</th>
-                </tr>
-              </thead>
-              <tbody>
-                {clientsWithData.map((c) => (
-                  <tr key={c.id}>
-                    <td>{c.name}</td>
-                    <td>
-                      <span style={{
-                        color: c.status === 'active' ? '#4ade80' : '#f87171',
-                        fontWeight: 600,
-                        fontSize: 12
-                      }}>
-                        {c.status === 'active' ? 'Ativo' : 'Inativo'}
-                      </span>
-                    </td>
-                    <td>
-                      {c.users.length === 0 ? (
-                        <span style={{ color: 'var(--text-muted)' }}>—</span>
-                      ) : (
-                        c.users.map((u) => (
-                          <div key={u.id} style={{ fontSize: 12 }}>
-                            {u.email} <span style={{ color: 'var(--text-muted)' }}>({u.role})</span>
-                          </div>
-                        ))
-                      )}
-                    </td>
-                    <td>
-                      {c.accounts.length === 0 ? (
-                        <span style={{ color: 'var(--text-muted)' }}>—</span>
-                      ) : (
-                        c.accounts.map((a) => (
-                          <div key={a.ad_account_id} style={{ fontSize: 12 }}>
-                            {a.label || a.ad_account_id}{' '}
-                            <span style={{ color: 'var(--text-muted)' }}>({a.ad_account_id})</span>
-                          </div>
-                        ))
-                      )}
-                    </td>
-                    <td style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                      {new Date(c.created_at).toLocaleDateString('pt-BR')}
-                    </td>
-                    <td>
-                      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                        <a
-                          href={`/dashboard?as=${c.id}`}
-                          className="button-secondary"
-                          style={{ fontSize: 12, padding: '4px 10px', textDecoration: 'none', borderRadius: 6 }}
-                        >
-                          👁 Ver
-                        </a>
-                        <form action={refreshClientAction}>
-                          <input type="hidden" name="client_id" value={c.id} />
-                          <SubmitButton
-                            label="Atualizar dados"
-                            pendingLabel="Atualizando..."
-                            className="button-secondary"
-                            style={{ fontSize: 12, padding: '4px 10px' }}
-                          />
-                        </form>
-                        <form action={setClientStatusAction}>
-                          <input type="hidden" name="client_id" value={c.id} />
-                          <input
-                            type="hidden"
-                            name="status"
-                            value={c.status === 'active' ? 'inactive' : 'active'}
-                          />
-                          <button
-                            className="button-secondary"
-                            type="submit"
-                            style={{ fontSize: 12, padding: '4px 10px' }}
-                          >
-                            {c.status === 'active' ? 'Desativar' : 'Reativar'}
-                          </button>
-                        </form>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {clientsWithData.map((c) => (
+              <div key={c.id} style={{
+                background: 'var(--bg-card, rgba(255,255,255,0.04))',
+                border: '1px solid var(--border)',
+                borderRadius: 12,
+                padding: '16px 20px',
+              }}>
+                {/* Linha superior: nome + status + badges */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+                  <span style={{ fontWeight: 700, fontSize: 15 }}>{c.name}</span>
+                  <span style={{
+                    fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 20,
+                    background: c.status === 'active' ? 'rgba(74,222,128,0.12)' : 'rgba(248,113,113,0.12)',
+                    color: c.status === 'active' ? '#4ade80' : '#f87171',
+                  }}>
+                    {c.status === 'active' ? 'Ativo' : 'Inativo'}
+                  </span>
+                  <span style={{
+                    fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 20,
+                    background: 'rgba(24,119,242,0.12)', color: '#4a9ff5',
+                  }}>
+                    Meta
+                  </span>
+                  {c.hasGoogle ? (
+                    <span style={{
+                      fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 20,
+                      background: 'rgba(52,168,83,0.12)', color: '#34a853',
+                    }}>
+                      Google
+                    </span>
+                  ) : null}
+                  <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--text-muted)' }}>
+                    {new Date(c.created_at).toLocaleDateString('pt-BR')}
+                  </span>
+                </div>
+
+                {/* Info: usuários + contas */}
+                <div style={{ display: 'flex', gap: 24, marginBottom: 14, fontSize: 12, color: 'var(--text-muted)' }}>
+                  <div>
+                    <span style={{ fontWeight: 600 }}>Usuários: </span>
+                    {c.users.length === 0 ? '—' : c.users.map((u) => (
+                      <span key={u.id}>{u.email} ({u.role})</span>
+                    ))}
+                  </div>
+                  <div>
+                    <span style={{ fontWeight: 600 }}>Contas Meta: </span>
+                    {c.accounts.length === 0 ? '—' : c.accounts.map((a) => (
+                      <span key={a.ad_account_id}>{a.label || 'Conta'} ({a.ad_account_id})</span>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Ações */}
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  <a
+                    href={`/dashboard?as=${c.id}`}
+                    className="button-secondary"
+                    style={{ fontSize: 12, padding: '5px 12px', textDecoration: 'none', borderRadius: 8 }}
+                  >
+                    👁 Ver dashboard
+                  </a>
+                  <form action={refreshClientAction}>
+                    <input type="hidden" name="client_id" value={c.id} />
+                    <SubmitButton
+                      label="↻ Atualizar dados"
+                      pendingLabel="Atualizando..."
+                      className="button-secondary"
+                      style={{ fontSize: 12, padding: '5px 12px', borderRadius: 8 }}
+                    />
+                  </form>
+                  <form action={setClientStatusAction}>
+                    <input type="hidden" name="client_id" value={c.id} />
+                    <input type="hidden" name="status" value={c.status === 'active' ? 'inactive' : 'active'} />
+                    <button className="button-secondary" type="submit" style={{ fontSize: 12, padding: '5px 12px', borderRadius: 8, color: c.status === 'active' ? '#f87171' : '#4ade80' }}>
+                      {c.status === 'active' ? 'Desativar' : 'Reativar'}
+                    </button>
+                  </form>
+                </div>
+              </div>
+            ))}
           </div>
         </section>
-        {/* Google Ads Credentials */}
+
+        {/* Google Ads — vincula a cliente existente */}
         <section className="panel reveal d5">
           <h2>Credenciais Google Ads</h2>
-          <p style={{ color: 'var(--text-muted)', fontSize: 13, marginBottom: 16 }}>
-            Configure o Refresh Token e a Conta Google Ads por cliente. As credenciais globais
-            (Developer Token, Client ID, Client Secret) ficam nas variáveis de ambiente.
+          <p style={{ color: 'var(--text-muted)', fontSize: 13, marginBottom: 20 }}>
+            Vincule uma conta Google Ads a um cliente existente. As credenciais globais
+            (Developer Token, Client ID, Client Secret) ficam nas variáveis de ambiente do Vercel.
           </p>
-          <form action={saveGoogleCredentialsAction} className="filters" style={{ maxWidth: 640 }}>
-            <div className="field">
-              <label htmlFor="g_client_id">Cliente *</label>
-              <select id="g_client_id" name="client_id" required style={{ width: '100%', padding: '8px 10px', borderRadius: 8, background: 'var(--bg-panel)', border: '1px solid var(--border)', color: 'var(--text)', fontSize: 13 }}>
-                <option value="">Selecione o cliente</option>
-                {(clients || []).map((c) => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
-                ))}
-              </select>
+          <form action={saveGoogleCredentialsAction}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <div className="field" style={{ gridColumn: '1 / -1' }}>
+                <label htmlFor="g_client_id">Cliente *</label>
+                <select id="g_client_id" name="client_id" required style={{ width: '100%', padding: '8px 12px', borderRadius: 8, background: 'var(--bg-panel)', border: '1px solid var(--border)', color: 'var(--text)', fontSize: 13 }}>
+                  <option value="">Selecione o cliente...</option>
+                  {(clients || []).map((c) => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="field" style={{ gridColumn: '1 / -1' }}>
+                <label htmlFor="g_refresh_token">Refresh Token OAuth2 *</label>
+                <input id="g_refresh_token" name="refresh_token" placeholder="1//04gn6r_NQAI6fCg..." required />
+              </div>
+              <div className="field">
+                <label htmlFor="g_customer_id">Customer ID (Conta Google Ads) *</label>
+                <input id="g_customer_id" name="customer_id" placeholder="Ex: 123-456-7890" required />
+              </div>
+              <div className="field">
+                <label htmlFor="g_manager_id">Manager Customer ID (MCC, opcional)</label>
+                <input id="g_manager_id" name="manager_customer_id" placeholder="Ex: 403-407-1393" />
+              </div>
             </div>
-            <div className="field">
-              <label htmlFor="g_refresh_token">Refresh Token OAuth2 *</label>
-              <input id="g_refresh_token" name="refresh_token" placeholder="1//0g..." required />
-            </div>
-            <div className="field">
-              <label htmlFor="g_customer_id">Customer ID (Conta Google Ads) *</label>
-              <input id="g_customer_id" name="customer_id" placeholder="Ex: 123-456-7890" required />
-            </div>
-            <div className="field">
-              <label htmlFor="g_manager_id">Manager Customer ID (MCC, opcional)</label>
-              <input id="g_manager_id" name="manager_customer_id" placeholder="Ex: 987-654-3210" />
-            </div>
-            <div className="field filter-actions">
-              <label>&nbsp;</label>
+            <div style={{ marginTop: 16 }}>
               <SubmitButton className="button-custom" label="Salvar Credenciais Google" pendingLabel="Salvando..." />
             </div>
           </form>

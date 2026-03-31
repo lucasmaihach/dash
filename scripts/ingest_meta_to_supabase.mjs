@@ -76,11 +76,13 @@ const DEFAULT_LEAD_KEYS = ['lead', 'offsite_conversion.fb_pixel_lead', 'onsite_w
 
 function buildEngagementFields(actions) {
   return {
-    follows: actionValue(actions, ['onsite_conversion.follow']),
+    // post_net_like = curtidas/seguidores líquidos de página gerados pelo anúncio
+    follows: actionValue(actions, ['onsite_conversion.post_net_like', 'like']),
     reactions: actionValue(actions, ['post_reaction']),
-    comments_count: actionValue(actions, ['comment']),
+    comments_count: actionValue(actions, ['comment', 'onsite_conversion.post_net_comment']),
     shares: actionValue(actions, ['post']),
-    saves: actionValue(actions, ['onsite_conversion.post_save']),
+    // post_net_save = salvamentos líquidos (saves - unsaves)
+    saves: actionValue(actions, ['onsite_conversion.post_net_save', 'onsite_conversion.post_save']),
     post_engagement: actionValue(actions, ['post_engagement']),
   }
 }

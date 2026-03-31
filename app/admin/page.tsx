@@ -159,10 +159,55 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
               </div>
             </div>
 
+            {/* Bloco: Google Ads (opcional) */}
+            <div style={{ marginTop: 4, paddingTop: 20, borderTop: '1px solid var(--border)' }}>
+              <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', color: '#34a853', textTransform: 'uppercase', marginBottom: 14 }}>
+                Google Ads <span style={{ fontWeight: 400, color: 'var(--text-muted)', fontSize: 11, textTransform: 'none' }}>(opcional)</span>
+              </p>
+              <p style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 14 }}>
+                Preencha após criar o cliente. As credenciais globais (Developer Token, Client ID, Client Secret) ficam nas variáveis de ambiente do Vercel.
+              </p>
+            </div>
+
             <div style={{ paddingTop: 16 }}>
               <SubmitButton className="button-custom" label="Criar Cliente" pendingLabel="Criando + sincronizando dados..." />
             </div>
           </form>
+
+          {/* Google Ads — form separado pois precisa do client_id já criado */}
+          <div style={{ marginTop: 24, paddingTop: 24, borderTop: '1px solid var(--border)' }}>
+            <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', color: '#34a853', textTransform: 'uppercase', marginBottom: 14 }}>
+              Vincular Google Ads a Cliente Existente
+            </p>
+            <form action={saveGoogleCredentialsAction}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <div className="field" style={{ gridColumn: '1 / -1' }}>
+                  <label htmlFor="g_client_id">Cliente *</label>
+                  <select id="g_client_id" name="client_id" required style={{ width: '100%', padding: '8px 12px', borderRadius: 8, background: 'var(--bg-panel)', border: '1px solid var(--border)', color: 'var(--text)', fontSize: 13 }}>
+                    <option value="">Selecione o cliente...</option>
+                    {(clients || []).map((c) => (
+                      <option key={c.id} value={c.id}>{c.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="field" style={{ gridColumn: '1 / -1' }}>
+                  <label htmlFor="g_refresh_token">Refresh Token OAuth2 *</label>
+                  <input id="g_refresh_token" name="refresh_token" placeholder="1//04gn6r_NQAI6fCg..." required />
+                </div>
+                <div className="field">
+                  <label htmlFor="g_customer_id">Customer ID (Conta Google Ads) *</label>
+                  <input id="g_customer_id" name="customer_id" placeholder="Ex: 123-456-7890" required />
+                </div>
+                <div className="field">
+                  <label htmlFor="g_manager_id">Manager Customer ID (MCC, opcional)</label>
+                  <input id="g_manager_id" name="manager_customer_id" placeholder="Ex: 403-407-1393" />
+                </div>
+              </div>
+              <div style={{ marginTop: 16 }}>
+                <SubmitButton className="button-custom" label="Salvar Credenciais Google" pendingLabel="Salvando..." />
+              </div>
+            </form>
+          </div>
         </section>
 
         {/* Lista de Clientes */}
@@ -263,42 +308,6 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
           </div>
         </section>
 
-        {/* Google Ads — vincula a cliente existente */}
-        <section className="panel reveal d5">
-          <h2>Credenciais Google Ads</h2>
-          <p style={{ color: 'var(--text-muted)', fontSize: 13, marginBottom: 20 }}>
-            Vincule uma conta Google Ads a um cliente existente. As credenciais globais
-            (Developer Token, Client ID, Client Secret) ficam nas variáveis de ambiente do Vercel.
-          </p>
-          <form action={saveGoogleCredentialsAction}>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-              <div className="field" style={{ gridColumn: '1 / -1' }}>
-                <label htmlFor="g_client_id">Cliente *</label>
-                <select id="g_client_id" name="client_id" required style={{ width: '100%', padding: '8px 12px', borderRadius: 8, background: 'var(--bg-panel)', border: '1px solid var(--border)', color: 'var(--text)', fontSize: 13 }}>
-                  <option value="">Selecione o cliente...</option>
-                  {(clients || []).map((c) => (
-                    <option key={c.id} value={c.id}>{c.name}</option>
-                  ))}
-                </select>
-              </div>
-              <div className="field" style={{ gridColumn: '1 / -1' }}>
-                <label htmlFor="g_refresh_token">Refresh Token OAuth2 *</label>
-                <input id="g_refresh_token" name="refresh_token" placeholder="1//04gn6r_NQAI6fCg..." required />
-              </div>
-              <div className="field">
-                <label htmlFor="g_customer_id">Customer ID (Conta Google Ads) *</label>
-                <input id="g_customer_id" name="customer_id" placeholder="Ex: 123-456-7890" required />
-              </div>
-              <div className="field">
-                <label htmlFor="g_manager_id">Manager Customer ID (MCC, opcional)</label>
-                <input id="g_manager_id" name="manager_customer_id" placeholder="Ex: 403-407-1393" />
-              </div>
-            </div>
-            <div style={{ marginTop: 16 }}>
-              <SubmitButton className="button-custom" label="Salvar Credenciais Google" pendingLabel="Salvando..." />
-            </div>
-          </form>
-        </section>
       </div>
     </main>
   )

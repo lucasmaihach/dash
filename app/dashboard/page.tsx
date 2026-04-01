@@ -987,9 +987,9 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
               <h2>A) Painel de Seguidores</h2>
               <div className="metrics-grid">
                 <div className="metric"><div className="label">Investimento Total</div><div className="value">{fMoney(totals.amount_spent)}</div></div>
-                <div className="metric"><div className="label">Seguidores Ganhos</div><div className="value">{fInt(totals.follows)}</div></div>
-                <div className="metric"><div className="label">Custo por Seguidor</div><div className="value">{fMoney(totals.cost_per_follow)}</div></div>
-                <div className="metric"><div className="label">Curtidas / Reações</div><div className="value">{fInt(totals.reactions)}</div></div>
+                <div className="metric"><div className="label">Seguidores Ganhos</div><div className="value">—</div></div>
+                <div className="metric"><div className="label">Custo por Seguidor</div><div className="value">—</div></div>
+                <div className="metric"><div className="label">Curtidas na Página</div><div className="value">{fInt(totals.reactions)}</div></div>
                 <div className="metric"><div className="label">Comentários</div><div className="value">{fInt(totals.comments_count)}</div></div>
                 <div className="metric"><div className="label">Compartilhamentos</div><div className="value">{fInt(totals.shares)}</div></div>
                 <div className="metric"><div className="label">Salvamentos</div><div className="value">{fInt(totals.saves)}</div></div>
@@ -1007,7 +1007,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                 {[
                   { stage: 'Impressões', value: totals.impressions, widthPct: 88, transitionRate: null },
                   { stage: 'Alcance', value: totals.reach, widthPct: 64, transitionRate: totals.impressions > 0 ? totals.reach / totals.impressions : 0 },
-                  { stage: 'Seguidores', value: totals.follows, widthPct: 40, transitionRate: totals.reach > 0 ? totals.follows / totals.reach : 0 },
+                  { stage: 'Seguidores', value: 0, widthPct: 40, transitionRate: 0 },
                 ].map((step, index) => (
                   <div className="funnel-row" key={step.stage}>
                     <div className="funnel-bar" style={{ width: `${step.widthPct}%` }}>
@@ -1019,7 +1019,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                 ))}
               </div>
               <p style={{ marginTop: 8, color: 'var(--text-muted)' }}>
-                Taxa de conversão total (Impressões → Seguidores): {fPct(totals.impressions > 0 ? totals.follows / totals.impressions : 0)}
+                Seguidores indisponíveis via API — importe a planilha do Ads Manager para atualizar.
               </p>
             </section>
 
@@ -1032,7 +1032,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                     { key: 'amount_spent', label: 'Investimento' },
                     { key: 'follows', label: 'Seguidores' },
                     { key: 'cost_per_follow', label: 'Custo/Seguidor' },
-                    { key: 'reactions', label: 'Curtidas' },
+                    { key: 'reactions', label: 'Curtidas na Página' },
                     { key: 'comments_count', label: 'Comentários' },
                     { key: 'shares', label: 'Compartilhamentos' },
                     { key: 'saves', label: 'Salvamentos' },
@@ -1044,8 +1044,8 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                   rows={campaignRows.map((row) => ({
                     name: row.campaign_name,
                     amount_spent: fMoney(row.totals.amount_spent),
-                    follows: fInt(row.totals.follows),
-                    cost_per_follow: fMoney(row.totals.cost_per_follow),
+                    follows: '—',
+                    cost_per_follow: '—',
                     reactions: fInt(row.totals.reactions),
                     comments_count: fInt(row.totals.comments_count),
                     shares: fInt(row.totals.shares),
@@ -1070,7 +1070,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                     { key: 'amount_spent', label: 'Investimento' },
                     { key: 'follows', label: 'Seguidores' },
                     { key: 'cost_per_follow', label: 'Custo/Seguidor' },
-                    { key: 'reactions', label: 'Curtidas' },
+                    { key: 'reactions', label: 'Curtidas na Página' },
                     { key: 'comments_count', label: 'Comentários' },
                     { key: 'shares', label: 'Compartilhamentos' },
                     { key: 'saves', label: 'Salvamentos' },
@@ -1081,8 +1081,8 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                   rows={bestAds.map((row) => ({
                     name: row.name,
                     amount_spent: fMoney(row.totals.amount_spent),
-                    follows: fInt(row.totals.follows),
-                    cost_per_follow: fMoney(row.totals.cost_per_follow),
+                    follows: '—',
+                    cost_per_follow: '—',
                     reactions: fInt(row.totals.reactions),
                     comments_count: fInt(row.totals.comments_count),
                     shares: fInt(row.totals.shares),

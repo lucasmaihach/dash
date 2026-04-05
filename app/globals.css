@@ -294,7 +294,7 @@ a {
   display: grid;
   grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
   gap: 12px;
-  align-items: start;
+  align-items: stretch;
 }
 
 .admin-card {
@@ -302,6 +302,8 @@ a {
   border: 1px solid rgba(255, 255, 255, 0.12);
   background: rgba(255, 255, 255, 0.03);
   padding: 14px;
+  min-width: 0;
+  height: 100%;
 }
 
 .admin-card-primary {
@@ -309,8 +311,9 @@ a {
 }
 
 .admin-card-secondary {
-  position: sticky;
-  top: 72px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
 .admin-card-header h3 {
@@ -321,6 +324,20 @@ a {
 }
 
 .admin-card-header p {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.admin-side-helper {
+  display: grid;
+  gap: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.02);
+  padding: 10px 12px;
+}
+
+.admin-side-helper p {
   color: var(--text-muted);
   font-size: 12px;
 }
@@ -395,7 +412,6 @@ a {
 }
 
 .admin-collapsible {
-  margin-top: 12px;
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 10px;
   background: rgba(255, 255, 255, 0.02);
@@ -425,6 +441,24 @@ a {
   display: grid;
   gap: 10px;
   padding: 12px;
+}
+
+.admin-clients-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.admin-client-card {
+  min-width: 0;
+}
+
+.admin-client-meta {
+  flex-wrap: wrap;
+}
+
+.admin-client-actions {
+  margin-top: auto;
 }
 
 .filters {
@@ -1223,6 +1257,10 @@ tbody tr:hover {
   }
 
   .admin-fields-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-clients-grid {
     grid-template-columns: 1fr;
   }
 }

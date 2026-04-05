@@ -181,7 +181,13 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
                 <p>Use este bloco quando o cliente já existir e você quiser habilitar os dados de Google Ads.</p>
               </div>
 
-              <details className="admin-collapsible">
+              <div className="admin-side-helper">
+                <p>1. Selecione o cliente.</p>
+                <p>2. Cole o refresh token.</p>
+                <p>3. Informe o Customer ID e salve.</p>
+              </div>
+
+              <details className="admin-collapsible" open>
                 <summary>Vincular Google Ads a Cliente Existente</summary>
                 <form action={saveGoogleCredentialsAction} className="admin-collapsible-body">
                   <div className="admin-fields-grid">
@@ -228,9 +234,9 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
             </form>
           </div>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div className="admin-clients-grid">
             {clientsWithData.map((c) => (
-              <div key={c.id} style={{
+              <div key={c.id} className="admin-client-card" style={{
                 background: 'var(--bg-card, rgba(255,255,255,0.04))',
                 border: '1px solid var(--border)',
                 borderRadius: 12,
@@ -266,7 +272,7 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
                 </div>
 
                 {/* Info: usuários + contas */}
-                <div style={{ display: 'flex', gap: 24, marginBottom: 14, fontSize: 12, color: 'var(--text-muted)' }}>
+                <div className="admin-client-meta" style={{ display: 'flex', gap: 24, marginBottom: 14, fontSize: 12, color: 'var(--text-muted)' }}>
                   <div>
                     <span style={{ fontWeight: 600 }}>Usuários: </span>
                     {c.users.length === 0 ? '—' : c.users.map((u) => (
@@ -282,7 +288,7 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
                 </div>
 
                 {/* Ações */}
-                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <div className="admin-client-actions" style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                   <a
                     href={`/dashboard?as=${c.id}`}
                     className="button-secondary"

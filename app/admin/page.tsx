@@ -294,7 +294,7 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
                     className="button-secondary"
                     style={{ fontSize: 12, padding: '5px 12px', textDecoration: 'none', borderRadius: 8 }}
                   >
-                    👁 Ver dashboard
+                    Ver dashboard
                   </a>
                   <form action={refreshClientAction}>
                     <input type="hidden" name="client_id" value={c.id} />

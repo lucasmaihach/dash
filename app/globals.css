@@ -461,6 +461,14 @@ a {
   margin-top: auto;
 }
 
+.admin-client-actions .button-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  line-height: 1;
+}
+
 .filters {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));

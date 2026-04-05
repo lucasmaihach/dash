@@ -109,7 +109,7 @@ export async function createClientAction(formData: FormData) {
   // 6. Ingestão automática inicial do cliente recém-criado
   let ingestFailed = false
   try {
-    await runIngest(client.id)
+    await runIngest(client.id, { mode: 'initial' })
   } catch (err) {
     console.error('[createClientAction] initial_ingest:', err)
     ingestFailed = true
@@ -126,7 +126,7 @@ export async function refreshAllClientsAction() {
 
   let failed = false
   try {
-    await runIngest()
+    await runIngest(undefined, { mode: 'refresh' })
   } catch (err) {
     console.error('[refreshAllClientsAction] ingest:', err)
     failed = true
@@ -143,7 +143,7 @@ export async function refreshClientAction(formData: FormData) {
 
   let failed = false
   try {
-    await runIngest(clientId)
+    await runIngest(clientId, { mode: 'refresh' })
   } catch (err) {
     console.error('[refreshClientAction] ingest:', err)
     failed = true

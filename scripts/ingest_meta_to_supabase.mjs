@@ -14,6 +14,8 @@ const META_AD_LEVEL = process.env.META_AD_LEVEL || 'ad'
 const META_TIME_INCREMENT = process.env.META_TIME_INCREMENT || '1'
 const META_LIMIT = Number(process.env.META_LIMIT || '500')
 const INGEST_ONLY_CLIENT_ID = (process.env.INGEST_ONLY_CLIENT_ID || '').trim()
+const INGEST_DATE_SINCE = (process.env.INGEST_DATE_SINCE || '').trim()
+const INGEST_DATE_UNTIL = (process.env.INGEST_DATE_UNTIL || '').trim()
 // META_BREAKDOWNS foi removido da ingestão de campanhas.
 // Breakdowns inflavam reach/impressions (o mesmo usuário contado por placement).
 // A API retorna totais corretos sem breakdowns. Mantido aqui apenas como referência.
@@ -316,11 +318,21 @@ function buildCreativeRow(clientId, ad) {
 }
 // --------------------------------
 
+function getRequestedDateRange() {
+  if (!INGEST_DATE_SINCE || !INGEST_DATE_UNTIL) return null
+
+  return {
+    since: INGEST_DATE_SINCE,
+    until: INGEST_DATE_UNTIL,
+  }
+}
+
 async function fetchMetaInsights(accessToken, adAccountId, options = {}) {
   const level = options.level || META_LEVEL
   const datePreset = options.datePreset || META_DATE_PRESET
   const timeIncrement = options.timeIncrement || META_TIME_INCREMENT
   const breakdowns = options.breakdowns === undefined ? [] : options.breakdowns
+  const requestedRange = getRequestedDateRange()
 
   const baseUrl = `https://graph.facebook.com/${META_API_VERSION}/act_${String(adAccountId).replace(/^act_/, '')}/insights`
   const fields = [
@@ -339,6 +351,51 @@ async function fetchMetaInsights(accessToken, adAccountId, options = {}) {
     'actions',
     'conversions'
   ].join(',')
+
+  if (requestedRange && !options.skipChunking) {
+    const allRows = []
+    const chunkDays = level === 'ad' ? 30 : 90
+    const globalStart = new Date(`${requestedRange.since}T00:00:00.000Z`)
+    let chunkEnd = new Date(`${requestedRange.until}T00:00:00.000Z`)
+
+    while (chunkEnd >= globalStart) {
+      const tentativeStart = new Date(chunkEnd)
+      tentativeStart.setUTCDate(tentativeStart.getUTCDate() - (chunkDays - 1))
+      const chunkStart = tentativeStart < globalStart ? new Date(globalStart) : tentativeStart
+      const since = chunkStart.toISOString().slice(0, 10)
+      const until = chunkEnd.toISOString().slice(0, 10)
+
+      const chunkParams = new URLSearchParams({
+        access_token: accessToken,
+        level,
+        fields,
+        limit: String(META_LIMIT),
+        time_increment: String(timeIncrement),
+        time_range: JSON.stringify({ since, until })
+      })
+      if (Array.isArray(breakdowns) && breakdowns.length > 0) {
+        chunkParams.set('breakdowns', breakdowns.join(','))
+      }
+
+      let url = `${baseUrl}?${chunkParams.toString()}`
+      while (url) {
+        const resp = await fetch(url)
+        const payload = await resp.json()
+        if (!resp.ok || payload.error) {
+          const message = payload?.error?.message || `HTTP ${resp.status}`
+          throw new Error(`Meta API error for account ${adAccountId}: ${message}`)
+        }
+        for (const item of payload.data || []) allRows.push(item)
+        url = payload?.paging?.next || null
+      }
+
+      const previousDay = new Date(chunkStart)
+      previousDay.setUTCDate(previousDay.getUTCDate() - 1)
+      chunkEnd = previousDay
+    }
+
+    return allRows
+  }
 
   // Se META_DAYS_BACK estiver configurado, divide em chunks de 90 dias (só para campaign)
   if (META_DAYS_BACK > 0 && !options.skipChunking) {
@@ -389,9 +446,14 @@ async function fetchMetaInsights(accessToken, adAccountId, options = {}) {
     level,
     fields,
     limit: String(META_LIMIT),
-    date_preset: datePreset,
     time_increment: String(timeIncrement)
   })
+
+  if (requestedRange) {
+    params.set('time_range', JSON.stringify(requestedRange))
+  } else {
+    params.set('date_preset', datePreset)
+  }
 
   if (Array.isArray(breakdowns) && breakdowns.length > 0) {
     params.set('breakdowns', breakdowns.join(','))
@@ -486,7 +548,6 @@ async function main() {
           const adInsights = await fetchMetaInsights(accessToken, adAccountId, {
             level: META_AD_LEVEL,
             breakdowns: [],
-            skipChunking: true  // ad-level: muitos ads × dias, usa date_preset padrão
           })
           for (const row of adInsights) adRows.push(buildAdMetricRow(clientId, row, leadActionKey))
         } catch (err) {

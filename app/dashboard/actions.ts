@@ -91,7 +91,7 @@ export async function refreshClientDataAction(formData: FormData) {
 
   let ingestError: unknown = null
   try {
-    await runIngest(effectiveClientId)
+    await runIngest(effectiveClientId, { mode: 'refresh' })
   } catch (err) {
     console.error('[refreshClientDataAction] ingest:', err)
     ingestError = err

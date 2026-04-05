@@ -11,6 +11,8 @@ const GOOGLE_ADS_CLIENT_SECRET = process.env.GOOGLE_ADS_CLIENT_SECRET
 const GOOGLE_API_VERSION = process.env.GOOGLE_API_VERSION || 'v17'
 const GOOGLE_DATE_RANGE = process.env.GOOGLE_DATE_RANGE || 'LAST_30_DAYS'
 const INGEST_ONLY_CLIENT_ID = (process.env.INGEST_ONLY_CLIENT_ID || '').trim()
+const INGEST_DATE_SINCE = (process.env.INGEST_DATE_SINCE || '').trim()
+const INGEST_DATE_UNTIL = (process.env.INGEST_DATE_UNTIL || '').trim()
 
 if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
   console.error('Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY')
@@ -66,6 +68,14 @@ function extractProjectTag(name) {
 
 function normalizeCustomerId(customerId) {
   return String(customerId || '').replace(/-/g, '')
+}
+
+function buildGoogleDateFilter() {
+  if (INGEST_DATE_SINCE && INGEST_DATE_UNTIL) {
+    return `segments.date BETWEEN '${INGEST_DATE_SINCE}' AND '${INGEST_DATE_UNTIL}'`
+  }
+
+  return `segments.date DURING ${GOOGLE_DATE_RANGE}`
 }
 
 async function supabaseGet(path) {
@@ -199,6 +209,7 @@ function buildAdMetricRow(clientId, customerId, raw) {
 
 async function main() {
   console.log('Loading active Google credentials and accounts...')
+  const googleDateFilter = buildGoogleDateFilter()
 
   const credentials = await supabaseGet('client_google_credentials?select=client_id,refresh_token,manager_customer_id,is_active&is_active=eq.true')
   const accounts = await supabaseGet('client_google_ad_accounts?select=client_id,customer_id,is_active&is_active=eq.true')
@@ -259,7 +270,7 @@ async function main() {
             metrics.cost_micros,
             metrics.conversions
           FROM campaign
-          WHERE segments.date DURING ${GOOGLE_DATE_RANGE}
+          WHERE ${googleDateFilter}
         `
 
         const adQuery = `
@@ -277,7 +288,7 @@ async function main() {
             metrics.cost_micros,
             metrics.conversions
           FROM ad_group_ad
-          WHERE segments.date DURING ${GOOGLE_DATE_RANGE}
+          WHERE ${googleDateFilter}
         `
 
         const rawCampaignRows = await googleAdsSearchStream({

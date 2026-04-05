@@ -108,105 +108,109 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
           </section>
         ) : null}
 
-        {/* Novo cliente — Meta + Google unificados */}
         <section className="panel reveal d3">
           <h2>Novo Cliente</h2>
-          <form action={createClientAction} style={{ marginTop: 20 }}>
+          <p className="admin-intro-copy">
+            Fluxo recomendado: crie o cliente com Meta Ads primeiro e, se necessário, conecte Google Ads em seguida.
+          </p>
 
-            {/* Bloco: Dados do Cliente */}
-            <div style={{ marginBottom: 24 }}>
-              <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: 14 }}>
-                Dados do Cliente
-              </p>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                <div className="field">
-                  <label htmlFor="name">Nome do cliente *</label>
-                  <input id="name" name="name" placeholder="Ex: Empresa XYZ" required />
+          <div className="admin-onboarding-grid">
+            <form action={createClientAction} className="admin-card admin-card-primary">
+              <div className="admin-card-header">
+                <h3>Criar Cliente</h3>
+                <p>Cadastro inicial com credenciais obrigatórias da Meta para começar a ingestão.</p>
+              </div>
+
+              <div className="admin-form-section">
+                <div className="admin-section-title-row">
+                  <p className="admin-section-label">Dados do Cliente</p>
                 </div>
-                <div className="field">
-                  <label htmlFor="full_name">Nome do usuário</label>
-                  <input id="full_name" name="full_name" placeholder="Ex: João Silva" />
-                </div>
-                <div className="field">
-                  <label htmlFor="email">Email de acesso *</label>
-                  <input id="email" name="email" type="email" placeholder="cliente@empresa.com" required />
-                </div>
-                <div className="field">
-                  <label htmlFor="password">Senha inicial *</label>
-                  <input id="password" name="password" type="password" placeholder="Mínimo 6 caracteres" required />
+                <div className="admin-fields-grid">
+                  <div className="field">
+                    <label htmlFor="name">Nome do cliente *</label>
+                    <input id="name" name="name" placeholder="Ex: Empresa XYZ" required />
+                  </div>
+                  <div className="field">
+                    <label htmlFor="full_name">Nome do usuário</label>
+                    <input id="full_name" name="full_name" placeholder="Ex: João Silva" />
+                  </div>
+                  <div className="field">
+                    <label htmlFor="email">Email de acesso *</label>
+                    <input id="email" name="email" type="email" placeholder="cliente@empresa.com" required />
+                  </div>
+                  <div className="field">
+                    <label htmlFor="password">Senha inicial *</label>
+                    <input id="password" name="password" type="password" placeholder="Mínimo 6 caracteres" required />
+                  </div>
                 </div>
               </div>
-            </div>
 
-            {/* Bloco: Meta Ads */}
-            <div style={{ marginBottom: 24, paddingTop: 20, borderTop: '1px solid var(--border)' }}>
-              <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', color: '#1877f2', textTransform: 'uppercase', marginBottom: 14 }}>
-                Meta Ads
-              </p>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                <div className="field" style={{ gridColumn: '1 / -1' }}>
-                  <label htmlFor="access_token">Access Token *</label>
-                  <input id="access_token" name="access_token" placeholder="EAAxxxxxxx..." required />
+              <div className="admin-form-section">
+                <div className="admin-section-title-row">
+                  <p className="admin-section-label admin-label-meta">Meta Ads</p>
+                  <span className="admin-section-pill">Obrigatório</span>
                 </div>
-                <div className="field">
-                  <label htmlFor="ad_account_id">ID da Conta de Anúncios *</label>
-                  <input id="ad_account_id" name="ad_account_id" placeholder="Ex: 123456789012345" required />
-                </div>
-                <div className="field">
-                  <label htmlFor="account_label">Label da conta</label>
-                  <input id="account_label" name="account_label" placeholder="Conta Principal" />
+                <div className="admin-fields-grid">
+                  <div className="field admin-field-full">
+                    <label htmlFor="access_token">Access Token *</label>
+                    <input id="access_token" name="access_token" placeholder="EAAxxxxxxx..." required />
+                  </div>
+                  <div className="field">
+                    <label htmlFor="ad_account_id">ID da Conta de Anúncios *</label>
+                    <input id="ad_account_id" name="ad_account_id" placeholder="Ex: 123456789012345" required />
+                  </div>
+                  <div className="field">
+                    <label htmlFor="account_label">Label da conta</label>
+                    <input id="account_label" name="account_label" placeholder="Conta Principal" />
+                  </div>
                 </div>
               </div>
-            </div>
 
-            {/* Bloco: Google Ads (opcional) */}
-            <div style={{ marginTop: 4, paddingTop: 20, borderTop: '1px solid var(--border)' }}>
-              <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', color: '#34a853', textTransform: 'uppercase', marginBottom: 14 }}>
-                Google Ads <span style={{ fontWeight: 400, color: 'var(--text-muted)', fontSize: 11, textTransform: 'none' }}>(opcional)</span>
+              <p className="admin-inline-note">
+                Google Ads é opcional e pode ser vinculado no card ao lado sem impactar o cadastro inicial.
               </p>
-              <p style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 14 }}>
-                Preencha após criar o cliente. As credenciais globais (Developer Token, Client ID, Client Secret) ficam nas variáveis de ambiente do Vercel.
-              </p>
-            </div>
 
-            <div style={{ paddingTop: 16 }}>
-              <SubmitButton className="button-custom" label="Criar Cliente" pendingLabel="Criando + sincronizando dados..." />
-            </div>
-          </form>
-
-          {/* Google Ads — form separado pois precisa do client_id já criado */}
-          <div style={{ marginTop: 24, paddingTop: 24, borderTop: '1px solid var(--border)' }}>
-            <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', color: '#34a853', textTransform: 'uppercase', marginBottom: 14 }}>
-              Vincular Google Ads a Cliente Existente
-            </p>
-            <form action={saveGoogleCredentialsAction}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                <div className="field" style={{ gridColumn: '1 / -1' }}>
-                  <label htmlFor="g_client_id">Cliente *</label>
-                  <select id="g_client_id" name="client_id" required style={{ width: '100%', padding: '8px 12px', borderRadius: 8, background: 'var(--bg-panel)', border: '1px solid var(--border)', color: 'var(--text)', fontSize: 13 }}>
-                    <option value="">Selecione o cliente...</option>
-                    {(clients || []).map((c) => (
-                      <option key={c.id} value={c.id}>{c.name}</option>
-                    ))}
-                  </select>
-                </div>
-                <div className="field" style={{ gridColumn: '1 / -1' }}>
-                  <label htmlFor="g_refresh_token">Refresh Token OAuth2 *</label>
-                  <input id="g_refresh_token" name="refresh_token" placeholder="1//04gn6r_NQAI6fCg..." required />
-                </div>
-                <div className="field">
-                  <label htmlFor="g_customer_id">Customer ID (Conta Google Ads) *</label>
-                  <input id="g_customer_id" name="customer_id" placeholder="Ex: 123-456-7890" required />
-                </div>
-                <div className="field">
-                  <label htmlFor="g_manager_id">Manager Customer ID (MCC, opcional)</label>
-                  <input id="g_manager_id" name="manager_customer_id" placeholder="Ex: 403-407-1393" />
-                </div>
-              </div>
-              <div style={{ marginTop: 16 }}>
-                <SubmitButton className="button-custom" label="Salvar Credenciais Google" pendingLabel="Salvando..." />
+              <div className="admin-submit-row">
+                <SubmitButton className="button-custom" label="Criar Cliente" pendingLabel="Criando + sincronizando dados..." />
               </div>
             </form>
+
+            <aside className="admin-card admin-card-secondary">
+              <div className="admin-card-header">
+                <h3>Google Ads</h3>
+                <p>Use este bloco quando o cliente já existir e você quiser habilitar os dados de Google Ads.</p>
+              </div>
+
+              <details className="admin-collapsible">
+                <summary>Vincular Google Ads a Cliente Existente</summary>
+                <form action={saveGoogleCredentialsAction} className="admin-collapsible-body">
+                  <div className="admin-fields-grid">
+                    <div className="field admin-field-full">
+                      <label htmlFor="g_client_id">Cliente *</label>
+                      <select id="g_client_id" name="client_id" required>
+                        <option value="">Selecione o cliente...</option>
+                        {(clients || []).map((c) => (
+                          <option key={c.id} value={c.id}>{c.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="field admin-field-full">
+                      <label htmlFor="g_refresh_token">Refresh Token OAuth2 *</label>
+                      <input id="g_refresh_token" name="refresh_token" placeholder="1//04gn6r_NQAI6fCg..." required />
+                    </div>
+                    <div className="field">
+                      <label htmlFor="g_customer_id">Customer ID *</label>
+                      <input id="g_customer_id" name="customer_id" placeholder="Ex: 123-456-7890" required />
+                    </div>
+                    <div className="field">
+                      <label htmlFor="g_manager_id">Manager ID (opcional)</label>
+                      <input id="g_manager_id" name="manager_customer_id" placeholder="Ex: 403-407-1393" />
+                    </div>
+                  </div>
+                  <SubmitButton className="button-custom" label="Salvar Credenciais Google" pendingLabel="Salvando..." />
+                </form>
+              </details>
+            </aside>
           </div>
         </section>
 

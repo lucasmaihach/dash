@@ -46,6 +46,7 @@ create table if not exists public.meta_daily_campaign_metrics (
   date date not null,
   campaign_name text not null,
   project_tag text not null,
+  daily_budget numeric not null default 0,
   reach numeric not null default 0,
   impressions numeric not null default 0,
   amount_spent numeric not null default 0,
@@ -62,6 +63,9 @@ create index if not exists idx_metrics_client_date
   on public.meta_daily_campaign_metrics (client_id, date);
 create index if not exists idx_metrics_client_tag_date
   on public.meta_daily_campaign_metrics (client_id, project_tag, date);
+
+alter table public.meta_daily_campaign_metrics
+  add column if not exists daily_budget numeric not null default 0;
 
 -- Auto updated_at
 create or replace function public.set_updated_at()

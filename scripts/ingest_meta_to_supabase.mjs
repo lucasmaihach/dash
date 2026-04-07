@@ -65,6 +65,10 @@ function toNum(value) {
   return Number.isFinite(n) ? n : 0
 }
 
+function toMoneyFromMinorUnits(value) {
+  return toNum(value) / 100
+}
+
 function actionValue(actions, keys) {
   if (!Array.isArray(actions)) return 0
   for (const key of keys) {
@@ -89,11 +93,13 @@ function buildEngagementFields(actions) {
   }
 }
 
-function buildCampaignMetricRow(clientId, raw, leadActionKey) {
+function buildCampaignMetricRow(clientId, raw, leadActionKey, campaignBudgetById) {
   const actions = raw.actions || []
   const conversions = raw.conversions || []
   const linkClicks = actionValue(actions, ['link_click']) || toNum(raw.clicks)
   const landingPageViews = actionValue(actions, ['landing_page_view', 'omni_landing_page_view'])
+  const campaignId = raw.campaign_id ? String(raw.campaign_id) : null
+  const dailyBudget = campaignId ? (campaignBudgetById.get(campaignId) || 0) : 0
   const leads = leadActionKey
     ? (actionValue(conversions, [leadActionKey]) + actionValue(actions, DEFAULT_LEAD_KEYS))
     : actionValue(actions, DEFAULT_LEAD_KEYS)
@@ -105,6 +111,7 @@ function buildCampaignMetricRow(clientId, raw, leadActionKey) {
     date: raw.date_start,
     campaign_name: raw.campaign_name || '(sem campanha)',
     project_tag: extractProjectTag(raw.campaign_name),
+    daily_budget: dailyBudget,
     reach: toNum(raw.reach),
     impressions: toNum(raw.impressions),
     amount_spent: toNum(raw.spend),
@@ -194,6 +201,26 @@ async function supabaseUpsert(table, rows, onConflict) {
 
     if (retry.ok) {
       console.warn('meta_daily_ad_metrics: fallback sem account_name aplicado com sucesso')
+      return
+    }
+
+    throw new Error(`Supabase UPSERT failed (${retry.status}) after fallback: ${await retry.text()}`)
+  }
+
+  // Compatibilidade com ambientes em que meta_daily_campaign_metrics ainda não possui daily_budget.
+  if (
+    table === 'meta_daily_campaign_metrics' &&
+    errorText.includes("Could not find the 'daily_budget' column")
+  ) {
+    const rowsWithoutDailyBudget = rows.map(({ daily_budget, ...rest }) => rest)
+    const retry = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(rowsWithoutDailyBudget)
+    })
+
+    if (retry.ok) {
+      console.warn('meta_daily_campaign_metrics: fallback sem daily_budget aplicado com sucesso')
       return
     }
 
@@ -316,6 +343,38 @@ function buildCreativeRow(clientId, ad) {
     creative_type: detectCreativeType(creative),
   }
 }
+
+async function fetchCampaignDailyBudgets(accessToken, adAccountId) {
+  const params = new URLSearchParams({
+    access_token: accessToken,
+    fields: 'id,daily_budget',
+    limit: String(META_LIMIT),
+  })
+
+  const baseUrl = `https://graph.facebook.com/${META_API_VERSION}/act_${String(adAccountId).replace(/^act_/, '')}/campaigns`
+  let url = `${baseUrl}?${params.toString()}`
+  const budgetByCampaignId = new Map()
+
+  while (url) {
+    const resp = await fetch(url)
+    const payload = await resp.json()
+
+    if (!resp.ok || payload.error) {
+      const message = payload?.error?.message || `HTTP ${resp.status}`
+      throw new Error(`Meta API (campaign budgets) error for account ${adAccountId}: ${message}`)
+    }
+
+    for (const item of payload.data || []) {
+      const campaignId = item?.id ? String(item.id) : null
+      if (!campaignId) continue
+      budgetByCampaignId.set(campaignId, toMoneyFromMinorUnits(item.daily_budget))
+    }
+
+    url = payload?.paging?.next || null
+  }
+
+  return budgetByCampaignId
+}
 // --------------------------------
 
 function getRequestedDateRange() {
@@ -339,6 +398,7 @@ async function fetchMetaInsights(accessToken, adAccountId, options = {}) {
     'date_start',
     'date_stop',
     'account_name',
+    'campaign_id',
     'campaign_name',
     'adset_id',
     'adset_name',
@@ -538,12 +598,16 @@ async function main() {
 
       for (const adAccountId of clientAccounts) {
         try {
+          const campaignBudgetById = await fetchCampaignDailyBudgets(accessToken, adAccountId)
+
           // Sem breakdowns: garante um total único por campanha/dia com reach correto
           const campaignInsights = await fetchMetaInsights(accessToken, adAccountId, {
             level: META_LEVEL,
             breakdowns: []
           })
-          for (const row of campaignInsights) campaignRows.push(buildCampaignMetricRow(clientId, row, leadActionKey))
+          for (const row of campaignInsights) {
+            campaignRows.push(buildCampaignMetricRow(clientId, row, leadActionKey, campaignBudgetById))
+          }
 
           const adInsights = await fetchMetaInsights(accessToken, adAccountId, {
             level: META_AD_LEVEL,
@@ -566,7 +630,7 @@ async function main() {
         const key = `${row.date}|${row.campaign_name}|${row.project_tag}`
         if (!campaignMap.has(key)) { campaignMap.set(key, { ...row }); continue }
         const existing = campaignMap.get(key)
-        for (const field of ['reach','impressions','amount_spent','link_clicks','landing_page_views','leads','follows','reactions','comments_count','shares','saves','post_engagement']) {
+        for (const field of ['daily_budget','reach','impressions','amount_spent','link_clicks','landing_page_views','leads','follows','reactions','comments_count','shares','saves','post_engagement']) {
           existing[field] = (existing[field] || 0) + (row[field] || 0)
         }
       }

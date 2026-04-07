@@ -2,6 +2,7 @@ export type MetricRow = {
   date: string
   campaign_name: string
   project_tag: string
+  daily_budget?: number
   reach: number
   impressions: number
   amount_spent: number
@@ -94,7 +95,11 @@ export function byCampaign(rows: MetricRow[]) {
   return Array.from(grouped.entries())
     .map(([campaign_name, items]) => ({
       campaign_name,
-      totals: consolidate(items)
+      totals: consolidate(items),
+      daily_budget:
+        [...items]
+          .sort((a, b) => b.date.localeCompare(a.date))
+          .find((item) => (item.daily_budget || 0) > 0)?.daily_budget || 0,
     }))
     .sort((a, b) => b.totals.amount_spent - a.totals.amount_spent)
 }

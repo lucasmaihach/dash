@@ -16,11 +16,22 @@ import { SubmitButton } from '@/app/components/SubmitButton'
 function getCachedMetrics(clientId: string) {
   return unstable_cache(
     async () => {
-      const { data, error } = await getSupabaseAdminClient()
+      const admin = getSupabaseAdminClient()
+      const { data, error } = await admin
         .from('meta_daily_campaign_metrics')
-        .select('date,campaign_name,project_tag,reach,impressions,amount_spent,link_clicks,landing_page_views,leads,follows,reactions,comments_count,shares,saves,post_engagement')
+        .select('date,campaign_name,project_tag,daily_budget,reach,impressions,amount_spent,link_clicks,landing_page_views,leads,follows,reactions,comments_count,shares,saves,post_engagement')
         .eq('client_id', clientId)
         .order('date', { ascending: false })
+
+      if (error?.code === '42703') {
+        const fallback = await admin
+          .from('meta_daily_campaign_metrics')
+          .select('date,campaign_name,project_tag,reach,impressions,amount_spent,link_clicks,landing_page_views,leads,follows,reactions,comments_count,shares,saves,post_engagement')
+          .eq('client_id', clientId)
+          .order('date', { ascending: false })
+        return { data: (fallback.data || []) as MetricRow[], error: fallback.error }
+      }
+
       return { data: (data || []) as MetricRow[], error }
     },
     [`campaign-metrics:${clientId}`],
@@ -40,6 +51,7 @@ function getCachedGoogleMetrics(clientId: string) {
         date: r.date,
         campaign_name: r.campaign_name,
         project_tag: r.project_tag,
+        daily_budget: 0,
         reach: 0,
         impressions: r.impressions ?? 0,
         amount_spent: r.amount_spent ?? 0,
@@ -773,6 +785,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                     columns={[
                       { key: 'name', label: 'Campaign Name' },
                       { key: 'amount_spent', label: 'Amount Spent' },
+                      { key: 'daily_budget', label: 'Orçamento Diário' },
                       { key: 'reach', label: 'Reach' },
                       { key: 'impressions', label: 'Impressions' },
                       { key: 'link_clicks', label: 'Link Clicks' },
@@ -787,6 +800,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                     rows={campaignRows.map((row) => ({
                       name: row.campaign_name,
                       amount_spent: fMoney(row.totals.amount_spent),
+                      daily_budget: fMoney(row.daily_budget || 0),
                       reach: fInt(row.totals.reach),
                       impressions: fInt(row.totals.impressions),
                       link_clicks: fInt(row.totals.link_clicks),
@@ -1030,6 +1044,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                   columns={[
                     { key: 'name', label: 'Campanha' },
                     { key: 'amount_spent', label: 'Investimento' },
+                    { key: 'daily_budget', label: 'Orçamento Diário' },
                     { key: 'follows', label: 'Seguidores' },
                     { key: 'cost_per_follow', label: 'Custo/Seguidor' },
                     { key: 'reactions', label: 'Curtidas na Página' },
@@ -1044,6 +1059,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                   rows={campaignRows.map((row) => ({
                     name: row.campaign_name,
                     amount_spent: fMoney(row.totals.amount_spent),
+                    daily_budget: fMoney(row.daily_budget || 0),
                     follows: '—',
                     cost_per_follow: '—',
                     reactions: fInt(row.totals.reactions),

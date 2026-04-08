@@ -375,6 +375,65 @@ async function fetchCampaignDailyBudgets(accessToken, adAccountId) {
 
   return budgetByCampaignId
 }
+
+async function fetchAdsetDailyBudgetsByCampaign(accessToken, adAccountId) {
+  const params = new URLSearchParams({
+    access_token: accessToken,
+    fields: 'id,campaign_id,daily_budget,effective_status',
+    limit: String(META_LIMIT),
+  })
+
+  const baseUrl = `https://graph.facebook.com/${META_API_VERSION}/act_${String(adAccountId).replace(/^act_/, '')}/adsets`
+  let url = `${baseUrl}?${params.toString()}`
+
+  const activeBudgetByCampaignId = new Map()
+  const anyBudgetByCampaignId = new Map()
+
+  while (url) {
+    const resp = await fetch(url)
+    const payload = await resp.json()
+
+    if (!resp.ok || payload.error) {
+      const message = payload?.error?.message || `HTTP ${resp.status}`
+      throw new Error(`Meta API (adset budgets) error for account ${adAccountId}: ${message}`)
+    }
+
+    for (const item of payload.data || []) {
+      const campaignId = item?.campaign_id ? String(item.campaign_id) : null
+      if (!campaignId) continue
+
+      const budget = toMoneyFromMinorUnits(item.daily_budget)
+      if (!(budget > 0)) continue
+
+      const status = String(item.effective_status || '').toUpperCase()
+      const isIgnoredStatus = status === 'ARCHIVED' || status === 'DELETED'
+      const isActiveLike = status === 'ACTIVE' || status === 'PAUSED'
+
+      if (!isIgnoredStatus) {
+        anyBudgetByCampaignId.set(
+          campaignId,
+          (anyBudgetByCampaignId.get(campaignId) || 0) + budget
+        )
+      }
+
+      if (isActiveLike) {
+        activeBudgetByCampaignId.set(
+          campaignId,
+          (activeBudgetByCampaignId.get(campaignId) || 0) + budget
+        )
+      }
+    }
+
+    url = payload?.paging?.next || null
+  }
+
+  // Prioriza soma de adsets ativos/pausados; fallback para qualquer adset não arquivado/deletado.
+  const resolved = new Map(anyBudgetByCampaignId)
+  for (const [campaignId, budget] of activeBudgetByCampaignId.entries()) {
+    resolved.set(campaignId, budget)
+  }
+  return resolved
+}
 // --------------------------------
 
 function getRequestedDateRange() {
@@ -598,7 +657,27 @@ async function main() {
 
       for (const adAccountId of clientAccounts) {
         try {
-          const campaignBudgetById = await fetchCampaignDailyBudgets(accessToken, adAccountId)
+          const campaignBudgetById = new Map()
+          try {
+            const fetchedCampaignBudgets = await fetchCampaignDailyBudgets(accessToken, adAccountId)
+            for (const [campaignId, budget] of fetchedCampaignBudgets.entries()) {
+              campaignBudgetById.set(campaignId, budget)
+            }
+          } catch (err) {
+            console.warn(`  account ${adAccountId}: campaign budgets unavailable — ${err.message}`)
+          }
+
+          try {
+            const adsetBudgetByCampaignId = await fetchAdsetDailyBudgetsByCampaign(accessToken, adAccountId)
+            for (const [campaignId, adsetBudget] of adsetBudgetByCampaignId.entries()) {
+              const campaignBudget = campaignBudgetById.get(campaignId) || 0
+              if (campaignBudget <= 0 && adsetBudget > 0) {
+                campaignBudgetById.set(campaignId, adsetBudget)
+              }
+            }
+          } catch (err) {
+            console.warn(`  account ${adAccountId}: adset budgets unavailable — ${err.message}`)
+          }
 
           // Sem breakdowns: garante um total único por campanha/dia com reach correto
           const campaignInsights = await fetchMetaInsights(accessToken, adAccountId, {

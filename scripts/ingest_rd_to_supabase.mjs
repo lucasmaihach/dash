@@ -114,6 +114,24 @@ async function supabasePatch(path, payload) {
   }
 }
 
+async function backfillMissingCreatedAtWithImportedAt(clientId) {
+  const missing = await supabaseGet(
+    `rd_leads_30d?select=rd_contact_uuid,imported_at&client_id=eq.${clientId}&created_at_rd=is.null`
+  )
+
+  let patched = 0
+  for (const row of missing) {
+    if (!row?.rd_contact_uuid || !row?.imported_at) continue
+    await supabasePatch(
+      `rd_leads_30d?client_id=eq.${clientId}&rd_contact_uuid=eq.${encodeURIComponent(row.rd_contact_uuid)}`,
+      { created_at_rd: row.imported_at }
+    )
+    patched += 1
+  }
+
+  return patched
+}
+
 async function supabaseDelete(path) {
   const resp = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
     method: 'DELETE',
@@ -528,9 +546,12 @@ async function main() {
   // Snapshot de 30 dias: evita acumular linhas antigas e inflar MQL no dashboard.
   await supabaseDelete(`rd_leads_30d?client_id=eq.${clientId}`)
   await supabaseUpsert('rd_leads_30d', rows, 'client_id,rd_contact_uuid')
+  const patchedMissingDates = await backfillMissingCreatedAtWithImportedAt(clientId)
 
   const mqlCount = rows.filter((r) => r.is_mql_25k).length
-  console.log(`Upsert complete: ${rows.length} leads, ${mqlCount} MQL (threshold ${RD_MQL_BUDGET_THRESHOLD})`)
+  console.log(
+    `Upsert complete: ${rows.length} leads, ${mqlCount} MQL (threshold ${RD_MQL_BUDGET_THRESHOLD}), backfilled_dates=${patchedMissingDates}`
+  )
 }
 
 main().catch((err) => {

@@ -316,10 +316,13 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
           rate: totals.link_clicks > 0 ? totals.landing_page_views / totals.link_clicks : 0
         },
         { stage: 'Leads', value: totals.leads, rate: totals.landing_page_views > 0 ? totals.leads / totals.landing_page_views : 0 },
+        { stage: 'MQL', value: rdMqlCount, rate: totals.leads > 0 ? rdMqlCount / totals.leads : 0 },
       ]
 
-  const totalFunnelRate = totals.impressions > 0 ? totals.leads / totals.impressions : 0
-  const funnelVisualWidths = selectedPlatform === 'google' ? [88, 64, 40] : [88, 76, 64, 52, 40]
+  const totalFunnelRate = selectedPlatform === 'google'
+    ? (totals.impressions > 0 ? totals.leads / totals.impressions : 0)
+    : (totals.impressions > 0 ? rdMqlCount / totals.impressions : 0)
+  const funnelVisualWidths = selectedPlatform === 'google' ? [88, 64, 40] : [90, 80, 68, 56, 44, 34]
   const funnelWithWidth = funnel.map((step, index) => ({
     ...step,
     widthPct: funnelVisualWidths[index] ?? 40,

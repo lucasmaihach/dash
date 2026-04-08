@@ -9,7 +9,7 @@ const RD_CLIENT_SECRET = process.env.RD_CLIENT_SECRET
 
 const INGEST_ONLY_CLIENT_ID = (process.env.INGEST_ONLY_CLIENT_ID || '').trim()
 const RD_LEADS_SEGMENT_NAME = (process.env.RD_LEADS_SEGMENT_NAME || 'LEADS_30D_IOX').trim()
-const RD_MQL_SEGMENT_NAME = (process.env.RD_MQL_SEGMENT_NAME || 'MQL_25K_30D_IOX').trim()
+const RD_MQL_SEGMENT_NAME = (process.env.RD_MQL_SEGMENT_NAME || 'G77 - Qualificado 25k').trim()
 const RD_MQL_BUDGET_THRESHOLD = Number(process.env.RD_MQL_BUDGET_THRESHOLD || '25000')
 
 if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
@@ -165,6 +165,36 @@ async function rdGet(path, accessToken, query = {}) {
   }
 
   return resp.json()
+}
+
+function decodeTrafficSource(encodedValue) {
+  const raw = String(encodedValue || '')
+  if (!raw.startsWith('encoded_')) return null
+
+  try {
+    const base64 = raw.slice('encoded_'.length)
+    const jsonText = Buffer.from(base64, 'base64').toString('utf8')
+    return JSON.parse(jsonText)
+  } catch {
+    return null
+  }
+}
+
+function extractUtmFromTrafficSource(encodedValue) {
+  const decoded = decodeTrafficSource(encodedValue)
+  if (!decoded || typeof decoded !== 'object') return null
+
+  const first = decoded?.first_session?.value || ''
+  const current = decoded?.current_session?.value || ''
+  const query = current || first
+  if (!query) return null
+
+  const params = new URLSearchParams(String(query))
+  return {
+    utm_source: params.get('utm_source') || null,
+    utm_medium: params.get('utm_medium') || null,
+    utm_campaign: params.get('utm_campaign') || null,
+  }
 }
 
 async function fetchAllSegmentContacts(segmentId, accessToken) {
@@ -395,7 +425,38 @@ async function main() {
     return rdGet(`/platform/contacts/${uuid}`, accessToken)
   }
 
+  async function fetchLatestConversionUtm(uuid) {
+    const events = await rdGet(`/platform/contacts/${uuid}/events`, accessToken, {
+      event_type: 'CONVERSION',
+      page: 1,
+      page_size: 10,
+    })
+    const arr = Array.isArray(events) ? events : events?.data || events?.events || []
+    if (!Array.isArray(arr) || arr.length === 0) return null
+    const latest = [...arr].sort((a, b) =>
+      String(b?.event_timestamp || '').localeCompare(String(a?.event_timestamp || ''))
+    )[0]
+    const payload = latest?.payload || {}
+    const fromTraffic = extractUtmFromTrafficSource(payload?.traffic_source)
+    const conversionIdentifier =
+      payload?.conversion_identifier || latest?.event_identifier || null
+    if (fromTraffic) {
+      return {
+        ...fromTraffic,
+        conversion_identifier: conversionIdentifier,
+      }
+    }
+
+    return {
+      utm_source: payload?.utm_source || null,
+      utm_medium: payload?.utm_medium || null,
+      utm_campaign: payload?.utm_campaign || null,
+      conversion_identifier: conversionIdentifier,
+    }
+  }
+
   const detailsById = new Map()
+  const utmById = new Map()
   for (let i = 0; i < leadContacts.length; i += 10) {
     const chunk = leadContacts.slice(i, i + 10)
     const detailedChunk = await Promise.all(
@@ -403,15 +464,21 @@ async function main() {
         const id = c?.uuid || c?.id || c?.contact_uuid || c?.contact_id || c?.identifier
         if (!id) return null
         try {
-          const detail = await fetchContactDetail(id)
-          return [String(id), detail]
+          const [detail, utm] = await Promise.all([
+            fetchContactDetail(id),
+            fetchLatestConversionUtm(id).catch(() => null),
+          ])
+          return [String(id), detail, utm]
         } catch {
-          return [String(id), c]
+          return [String(id), c, null]
         }
       })
     )
     for (const item of detailedChunk) {
-      if (item) detailsById.set(item[0], item[1])
+      if (item) {
+        detailsById.set(item[0], item[1])
+        if (item[2]) utmById.set(item[0], item[2])
+      }
     }
   }
 
@@ -419,7 +486,19 @@ async function main() {
     .map((c) => {
       const id = String(c?.uuid || c?.id || c?.contact_uuid || c?.contact_id || c?.identifier || '')
       const detailed = detailsById.get(id) || c
-      return normalizeLeadRow(clientId, detailed, mqlSet.has(id))
+      const row = normalizeLeadRow(clientId, detailed, mqlSet.has(id))
+      if (!row) return null
+      const utm = utmById.get(id)
+      if (utm) {
+        row.utm_source = utm.utm_source || row.utm_source
+        row.utm_medium = utm.utm_medium || row.utm_medium
+        row.utm_campaign =
+          utm.utm_campaign ||
+          row.utm_campaign ||
+          utm.conversion_identifier ||
+          row.utm_campaign
+      }
+      return row
     })
     .filter(Boolean)
 

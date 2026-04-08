@@ -152,6 +152,19 @@ function normalizeCampaignKey(value: string | null | undefined): string {
     .replace(/\s+/g, ' ')
 }
 
+function campaignSlug(value: string | null | undefined): string {
+  return normalizeCampaignKey(value).replace(/[^a-z0-9]+/g, '')
+}
+
+function tokenScore(a: string, b: string): number {
+  const ta = new Set(a.split(/[^a-z0-9]+/g).filter(Boolean))
+  const tb = new Set(b.split(/[^a-z0-9]+/g).filter(Boolean))
+  if (ta.size === 0 || tb.size === 0) return 0
+  let common = 0
+  for (const t of ta) if (tb.has(t)) common += 1
+  return common / Math.max(ta.size, tb.size)
+}
+
 function rankByEntity(rows: AdMetricRow[], key: 'ad_name' | 'adset_name') {
   const grouped = new Map<string, MetricRow[]>()
 
@@ -327,12 +340,54 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
 
   const campaignMqlByName = new Map<string, number>()
   const campaignMqlRateByName = new Map<string, number>()
+  const campaignKeySet = new Set(campaignRows.map((r) => normalizeCampaignKey(r.campaign_name)))
+  const resolvedRdKeyToCampaignKey = new Map<string, string>()
+
+  for (const rdKey of rdLeadsByCampaign.keys()) {
+    if (campaignKeySet.has(rdKey)) {
+      resolvedRdKeyToCampaignKey.set(rdKey, rdKey)
+      continue
+    }
+
+    const rdSlug = campaignSlug(rdKey)
+    let bestKey = ''
+    let bestScore = 0
+
+    for (const row of campaignRows) {
+      const campaignKey = normalizeCampaignKey(row.campaign_name)
+      const campaignSlugValue = campaignSlug(campaignKey)
+      if (!campaignSlugValue || !rdSlug) continue
+
+      const slugMatch =
+        campaignSlugValue.includes(rdSlug) ||
+        rdSlug.includes(campaignSlugValue)
+          ? 0.8
+          : 0
+      const score = Math.max(slugMatch, tokenScore(rdKey, campaignKey))
+      if (score > bestScore) {
+        bestScore = score
+        bestKey = campaignKey
+      }
+    }
+
+    if (bestKey && bestScore >= 0.5) {
+      resolvedRdKeyToCampaignKey.set(rdKey, bestKey)
+    }
+  }
+
   for (const row of campaignRows) {
-    const key = normalizeCampaignKey(row.campaign_name)
-    const leadsRdCampaign = rdLeadsByCampaign.get(key) || 0
-    const mqlCampaign = rdMqlByCampaign.get(key) || 0
-    campaignMqlByName.set(key, mqlCampaign)
-    campaignMqlRateByName.set(key, leadsRdCampaign > 0 ? mqlCampaign / leadsRdCampaign : globalRdMqlRate)
+    const campaignKey = normalizeCampaignKey(row.campaign_name)
+    let leadsRdCampaign = 0
+    let mqlCampaign = 0
+
+    for (const [rdKey, targetCampaignKey] of resolvedRdKeyToCampaignKey.entries()) {
+      if (targetCampaignKey !== campaignKey) continue
+      leadsRdCampaign += rdLeadsByCampaign.get(rdKey) || 0
+      mqlCampaign += rdMqlByCampaign.get(rdKey) || 0
+    }
+
+    campaignMqlByName.set(campaignKey, mqlCampaign)
+    campaignMqlRateByName.set(campaignKey, leadsRdCampaign > 0 ? mqlCampaign / leadsRdCampaign : globalRdMqlRate)
   }
 
   const funnel = selectedPlatform === 'google'

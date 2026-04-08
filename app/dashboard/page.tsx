@@ -316,8 +316,9 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   const rdLeadsTableMissing = rdLeadsRes.error?.code === '42P01'
   const rdLeadsRows = ((rdLeadsRes.data || []) as RdLeadRow[]).filter((row) => {
     const dateOnly = (row.created_at_rd || '').slice(0, 10)
-    const byStart = start ? (dateOnly ? dateOnly >= start : true) : true
-    const byEnd = end ? (dateOnly ? dateOnly <= end : true) : true
+    const hasDate = Boolean(dateOnly)
+    const byStart = start ? (hasDate ? dateOnly >= start : false) : true
+    const byEnd = end ? (hasDate ? dateOnly <= end : false) : true
     const byCampaign = selectedCampaignQuery
       ? (row.utm_campaign || '').toLowerCase().includes(selectedCampaignQuery.toLowerCase())
       : true

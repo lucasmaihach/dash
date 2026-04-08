@@ -459,6 +459,7 @@ async function main() {
       return {
         ...fromTraffic,
         conversion_identifier: conversionIdentifier,
+        conversion_at: latest?.event_timestamp || null,
       }
     }
 
@@ -467,6 +468,7 @@ async function main() {
       utm_medium: payload?.utm_medium || null,
       utm_campaign: payload?.utm_campaign || null,
       conversion_identifier: conversionIdentifier,
+      conversion_at: latest?.event_timestamp || null,
     }
   }
 
@@ -512,6 +514,7 @@ async function main() {
           row.utm_campaign ||
           utm.conversion_identifier ||
           row.utm_campaign
+        row.created_at_rd = row.created_at_rd || utm.conversion_at || row.created_at_rd
       }
       return row
     })

@@ -105,6 +105,12 @@ type AdCreativeLinkRow = {
   link_url: string | null
 }
 
+type RdLeadRow = {
+  created_at_rd: string | null
+  utm_campaign: string | null
+  is_mql_25k: boolean
+}
+
 function makeDateValue(value: string | undefined, fallback: string): string {
   if (!value) return fallback
   return value
@@ -271,6 +277,28 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   const totals = consolidate(filtered)
   const byDayRows = byDay(filtered)
   const campaignRows = byCampaign(filtered)
+
+  // Leads qualificados vindos do RD Station (base local já ingerida em rd_leads_30d)
+  const rdLeadsRes = await dataClient
+    .from('rd_leads_30d')
+    .select('created_at_rd,utm_campaign,is_mql_25k')
+    .eq('client_id', effectiveClientId)
+    .order('created_at_rd', { ascending: false })
+
+  const rdLeadsTableMissing = rdLeadsRes.error?.code === '42P01'
+  const rdLeadsRows = ((rdLeadsRes.data || []) as RdLeadRow[]).filter((row) => {
+    const dateOnly = (row.created_at_rd || '').slice(0, 10)
+    const byStart = start ? (dateOnly ? dateOnly >= start : true) : true
+    const byEnd = end ? (dateOnly ? dateOnly <= end : true) : true
+    const byCampaign = selectedCampaignQuery
+      ? (row.utm_campaign || '').toLowerCase().includes(selectedCampaignQuery.toLowerCase())
+      : true
+    return byStart && byEnd && byCampaign
+  })
+
+  const rdLeadsCount = rdLeadsRows.length
+  const rdMqlCount = rdLeadsRows.filter((row) => row.is_mql_25k).length
+  const costPerMql = rdMqlCount > 0 ? totals.amount_spent / rdMqlCount : 0
 
   const funnel = selectedPlatform === 'google'
     ? [
@@ -714,6 +742,9 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                     <div className="metric"><div className="label">Link Clicks</div><div className="value">{fInt(totals.link_clicks)}</div></div>
                     <div className="metric"><div className="label">Landing Page Views</div><div className="value">{fInt(totals.landing_page_views)}</div></div>
                     <div className="metric"><div className="label">Leads</div><div className="value">{fInt(totals.leads)}</div></div>
+                    <div className="metric"><div className="label">Leads RD</div><div className="value">{rdLeadsTableMissing ? '—' : fInt(rdLeadsCount)}</div></div>
+                    <div className="metric"><div className="label">MQL 25k (RD)</div><div className="value">{rdLeadsTableMissing ? '—' : fInt(rdMqlCount)}</div></div>
+                    <div className="metric"><div className="label">Custo por MQL</div><div className="value">{rdLeadsTableMissing || rdMqlCount === 0 ? '—' : fMoney(costPerMql)}</div></div>
                     <div className="metric"><div className="label">CPC</div><div className="value">{fMoney(totals.cpc)}</div></div>
                     <div className="metric"><div className="label">CPL</div><div className="value">{fMoney(totals.cpl)}</div></div>
                     <div className="metric"><div className="label">CPM</div><div className="value">{fMoney(totals.cpm)}</div></div>
@@ -733,6 +764,14 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                 )}
               </div>
             </section>
+
+            {rdLeadsTableMissing ? (
+              <section className="panel reveal d4">
+                <p className="error">
+                  Tabela <code>rd_leads_30d</code> não encontrada. Execute o SQL em <code>docs/add_rd_leads_30d.sql</code>.
+                </p>
+              </section>
+            ) : null}
 
             <section className="panel reveal d5">
               <h2>B) Funil Visual</h2>

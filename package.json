@@ -10,7 +10,8 @@
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
     "ingest:meta": "node scripts/ingest_meta_to_supabase.mjs",
-    "ingest:google": "node scripts/ingest_google_to_supabase.mjs"
+    "ingest:google": "node scripts/ingest_google_to_supabase.mjs",
+    "ingest:rd": "node scripts/ingest_rd_to_supabase.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "0.5.2",

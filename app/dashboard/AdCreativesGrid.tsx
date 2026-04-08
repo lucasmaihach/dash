@@ -14,6 +14,8 @@ export type CreativeCard = {
   // métricas
   amount_spent: string
   leads: string
+  mql: string
+  cpmql: string
   cpl: string
   impressions: string
   ctr: string
@@ -91,6 +93,10 @@ export function AdCreativesGrid({ cards }: Props) {
                 <span className="creative-metric-value">{card.leads}</span>
               </div>
               <div className="creative-metric">
+                <span className="creative-metric-label">MQL</span>
+                <span className="creative-metric-value">{card.mql}</span>
+              </div>
+              <div className="creative-metric">
                 <span className="creative-metric-label">CPL</span>
                 <span className="creative-metric-value">{card.cpl}</span>
               </div>
@@ -114,6 +120,10 @@ export function AdCreativesGrid({ cards }: Props) {
                 <div className="creative-metric">
                   <span className="creative-metric-label">CPC</span>
                   <span className="creative-metric-value">{card.cpc}</span>
+                </div>
+                <div className="creative-metric">
+                  <span className="creative-metric-label">Custo/MQL</span>
+                  <span className="creative-metric-value">{card.cpmql}</span>
                 </div>
 
                 {(card.ad_snapshot_url || card.link_url) && (

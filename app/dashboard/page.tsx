@@ -111,6 +111,11 @@ type RdLeadRow = {
   is_mql_25k: boolean
 }
 
+type EntityMqlTotals = {
+  estimatedMql: number
+  amountSpent: number
+}
+
 function makeDateValue(value: string | undefined, fallback: string): string {
   if (!value) return fallback
   return value
@@ -135,6 +140,16 @@ function buildDashboardHref(base: Search, patch: Partial<Search>) {
 
 function normalizeEntityKey(value: string | null | undefined): string {
   return (value || '').trim().toLowerCase().replace(/\s+/g, ' ')
+}
+
+function normalizeCampaignKey(value: string | null | undefined): string {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\[|\]/g, '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
 }
 
 function rankByEntity(rows: AdMetricRow[], key: 'ad_name' | 'adset_name') {
@@ -299,6 +314,26 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   const rdLeadsCount = rdLeadsRows.length
   const rdMqlCount = rdLeadsRows.filter((row) => row.is_mql_25k).length
   const costPerMql = rdMqlCount > 0 ? totals.amount_spent / rdMqlCount : 0
+  const globalRdMqlRate = rdLeadsCount > 0 ? rdMqlCount / rdLeadsCount : 0
+
+  const rdLeadsByCampaign = new Map<string, number>()
+  const rdMqlByCampaign = new Map<string, number>()
+  for (const row of rdLeadsRows) {
+    const key = normalizeCampaignKey(row.utm_campaign)
+    if (!key) continue
+    rdLeadsByCampaign.set(key, (rdLeadsByCampaign.get(key) || 0) + 1)
+    if (row.is_mql_25k) rdMqlByCampaign.set(key, (rdMqlByCampaign.get(key) || 0) + 1)
+  }
+
+  const campaignMqlByName = new Map<string, number>()
+  const campaignMqlRateByName = new Map<string, number>()
+  for (const row of campaignRows) {
+    const key = normalizeCampaignKey(row.campaign_name)
+    const leadsRdCampaign = rdLeadsByCampaign.get(key) || 0
+    const mqlCampaign = rdMqlByCampaign.get(key) || 0
+    campaignMqlByName.set(key, mqlCampaign)
+    campaignMqlRateByName.set(key, leadsRdCampaign > 0 ? mqlCampaign / leadsRdCampaign : globalRdMqlRate)
+  }
 
   const funnel = selectedPlatform === 'google'
     ? [
@@ -336,6 +371,8 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   let creativeCards: CreativeCard[] = []
   let creativesTableMissing = false
   const adPublicLinkByName = new Map<string, string>()
+  const adMqlTotalsByName = new Map<string, EntityMqlTotals>()
+  const adsetMqlTotalsByName = new Map<string, EntityMqlTotals>()
 
   if (needsAdLevelData && selectedPlatform === 'google') {
     const gAdRes = await getSupabaseAdminClient()
@@ -375,6 +412,30 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
         leads: r.leads ?? 0,
       })) as AdMetricRow[]
 
+    for (const row of gAdRows) {
+      const campaignKey = normalizeCampaignKey(row.campaign_name)
+      const mqlRate = campaignMqlRateByName.get(campaignKey) ?? globalRdMqlRate
+      const estimatedMql = (row.leads || 0) * (mqlRate || 0)
+
+      const adKey = normalizeEntityKey(row.ad_name)
+      if (adKey) {
+        const prev = adMqlTotalsByName.get(adKey) || { estimatedMql: 0, amountSpent: 0 }
+        adMqlTotalsByName.set(adKey, {
+          estimatedMql: prev.estimatedMql + estimatedMql,
+          amountSpent: prev.amountSpent + (row.amount_spent || 0),
+        })
+      }
+
+      const adsetKey = normalizeEntityKey(row.adset_name)
+      if (adsetKey) {
+        const prev = adsetMqlTotalsByName.get(adsetKey) || { estimatedMql: 0, amountSpent: 0 }
+        adsetMqlTotalsByName.set(adsetKey, {
+          estimatedMql: prev.estimatedMql + estimatedMql,
+          amountSpent: prev.amountSpent + (row.amount_spent || 0),
+        })
+      }
+    }
+
     bestAds = rankByEntity(gAdRows, 'ad_name').slice(0, 20)
     bestAdsets = rankByEntity(gAdRows, 'adset_name').slice(0, 20)
   }
@@ -398,6 +459,30 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
         : true
       return byTag && byCampaign
     })
+
+    for (const row of adRows) {
+      const campaignKey = normalizeCampaignKey(row.campaign_name)
+      const mqlRate = campaignMqlRateByName.get(campaignKey) ?? globalRdMqlRate
+      const estimatedMql = (row.leads || 0) * (mqlRate || 0)
+
+      const adKey = normalizeEntityKey(row.ad_name)
+      if (adKey) {
+        const prev = adMqlTotalsByName.get(adKey) || { estimatedMql: 0, amountSpent: 0 }
+        adMqlTotalsByName.set(adKey, {
+          estimatedMql: prev.estimatedMql + estimatedMql,
+          amountSpent: prev.amountSpent + (row.amount_spent || 0),
+        })
+      }
+
+      const adsetKey = normalizeEntityKey(row.adset_name)
+      if (adsetKey) {
+        const prev = adsetMqlTotalsByName.get(adsetKey) || { estimatedMql: 0, amountSpent: 0 }
+        adsetMqlTotalsByName.set(adsetKey, {
+          estimatedMql: prev.estimatedMql + estimatedMql,
+          amountSpent: prev.amountSpent + (row.amount_spent || 0),
+        })
+      }
+    }
 
     bestAds = rankByEntity(adRows, 'ad_name').slice(0, 20)
     bestAdsets = rankByEntity(adRows, 'adset_name').slice(0, 20)
@@ -455,6 +540,9 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
           .map((c) => {
             const adName = c.ad_name ?? ''
             const m = metricsByAdName.get(adName)
+            const mqlTotals = adMqlTotalsByName.get(normalizeEntityKey(adName))
+            const estMql = mqlTotals?.estimatedMql || 0
+            const cpmql = estMql > 0 ? (mqlTotals?.amountSpent || 0) / estMql : 0
             return {
               ad_id: c.ad_id,
               ad_name: c.ad_name,
@@ -466,6 +554,8 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
               call_to_action_type: c.call_to_action_type,
               amount_spent: m ? fMoney(m.amount_spent) : '—',
               leads: m ? fInt(m.leads) : '—',
+              mql: estMql > 0 ? fInt(Math.round(estMql)) : '—',
+              cpmql: estMql > 0 ? fMoney(cpmql) : '—',
               cpl: m ? fMoney(m.cpl) : '—',
               impressions: m ? fInt(m.impressions) : '—',
               ctr: m ? fPct(m.ctr) : '—',
@@ -798,67 +888,85 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
               <div className="table-wrap">
                 {selectedPlatform === 'google' ? (
                   <SortableTable
-                    columns={[
-                      { key: 'name', label: 'Campaign Name' },
-                      { key: 'amount_spent', label: 'Amount Spent' },
-                      { key: 'impressions', label: 'Impressions' },
-                      { key: 'link_clicks', label: 'Clicks' },
-                      { key: 'leads', label: 'Leads' },
-                      { key: 'cpc', label: 'CPC' },
-                      { key: 'cpl', label: 'CPL' },
-                      { key: 'ctr', label: 'CTR' },
-                      { key: 'cpm', label: 'CPM' },
-                    ]}
-                    rows={campaignRows.map((row) => ({
+                  columns={[
+                    { key: 'name', label: 'Campaign Name' },
+                    { key: 'amount_spent', label: 'Amount Spent' },
+                    { key: 'impressions', label: 'Impressions' },
+                    { key: 'link_clicks', label: 'Clicks' },
+                    { key: 'leads', label: 'Leads' },
+                    { key: 'mql', label: 'MQL' },
+                    { key: 'cpmql', label: 'Custo/MQL' },
+                    { key: 'cpc', label: 'CPC' },
+                    { key: 'cpl', label: 'CPL' },
+                    { key: 'ctr', label: 'CTR' },
+                    { key: 'cpm', label: 'CPM' },
+                  ]}
+                  rows={campaignRows.map((row) => {
+                    const campaignKey = normalizeCampaignKey(row.campaign_name)
+                    const mql = campaignMqlByName.get(campaignKey) || 0
+                    const cpmql = mql > 0 ? row.totals.amount_spent / mql : 0
+                    return {
                       name: row.campaign_name,
                       amount_spent: fMoney(row.totals.amount_spent),
                       impressions: fInt(row.totals.impressions),
                       link_clicks: fInt(row.totals.link_clicks),
                       leads: fInt(row.totals.leads),
+                      mql: mql > 0 ? fInt(mql) : '—',
+                      cpmql: mql > 0 ? fMoney(cpmql) : '—',
                       cpc: fMoney(row.totals.cpc),
                       cpl: fMoney(row.totals.cpl),
                       ctr: fPct(row.totals.ctr),
                       cpm: fMoney(row.totals.cpm),
-                    }))}
-                    firstColStyle={{ maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
-                  />
-                ) : (
-                  <SortableTable
-                    columns={[
+                    }
+                  })}
+                  firstColStyle={{ maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                />
+              ) : (
+                <SortableTable
+                  columns={[
                       { key: 'name', label: 'Campaign Name' },
                       { key: 'amount_spent', label: 'Amount Spent' },
                       { key: 'daily_budget', label: 'Orçamento Diário' },
                       { key: 'reach', label: 'Reach' },
                       { key: 'impressions', label: 'Impressions' },
-                      { key: 'link_clicks', label: 'Link Clicks' },
-                      { key: 'landing_page_views', label: 'Landing Page Views' },
-                      { key: 'leads', label: 'Leads' },
-                      { key: 'cpc', label: 'CPC' },
-                      { key: 'cpl', label: 'CPL' },
-                      { key: 'ctr', label: 'CTR' },
-                      { key: 'cpm', label: 'CPM' },
-                      { key: 'connect_rate', label: 'Connect Rate' },
-                    ]}
-                    rows={campaignRows.map((row) => ({
+                    { key: 'link_clicks', label: 'Link Clicks' },
+                    { key: 'landing_page_views', label: 'Landing Page Views' },
+                    { key: 'leads', label: 'Leads' },
+                    { key: 'mql', label: 'MQL' },
+                    { key: 'cpmql', label: 'Custo/MQL' },
+                    { key: 'cpc', label: 'CPC' },
+                    { key: 'cpl', label: 'CPL' },
+                    { key: 'ctr', label: 'CTR' },
+                    { key: 'cpm', label: 'CPM' },
+                    { key: 'connect_rate', label: 'Connect Rate' },
+                  ]}
+                  rows={campaignRows.map((row) => {
+                    const campaignKey = normalizeCampaignKey(row.campaign_name)
+                    const mql = campaignMqlByName.get(campaignKey) || 0
+                    const cpmql = mql > 0 ? row.totals.amount_spent / mql : 0
+                    return {
                       name: row.campaign_name,
                       amount_spent: fMoney(row.totals.amount_spent),
-                      daily_budget: fMoney(row.daily_budget || 0),
+                      daily_budget: row.daily_budget && row.daily_budget > 0 ? fMoney(row.daily_budget) : '—',
                       reach: fInt(row.totals.reach),
                       impressions: fInt(row.totals.impressions),
                       link_clicks: fInt(row.totals.link_clicks),
                       landing_page_views: fInt(row.totals.landing_page_views),
                       leads: fInt(row.totals.leads),
+                      mql: mql > 0 ? fInt(mql) : '—',
+                      cpmql: mql > 0 ? fMoney(cpmql) : '—',
                       cpc: fMoney(row.totals.cpc),
                       cpl: fMoney(row.totals.cpl),
                       ctr: fPct(row.totals.ctr),
                       cpm: fMoney(row.totals.cpm),
                       connect_rate: fPct(row.totals.connect_rate),
-                    }))}
-                    firstColStyle={{ maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
-                  />
-                )}
-              </div>
-            </section>
+                    }
+                  })}
+                  firstColStyle={{ maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                />
+              )}
+            </div>
+          </section>
           </>
         ) : null}
 
@@ -891,22 +999,31 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                     { key: 'impressions', label: 'Impressions' },
                     { key: 'link_clicks', label: 'Clicks' },
                     { key: 'leads', label: 'Leads' },
+                    { key: 'mql', label: 'MQL (est.)' },
+                    { key: 'cpmql', label: 'Custo/MQL (est.)' },
                     { key: 'cpc', label: 'CPC' },
                     { key: 'cpl', label: 'CPL' },
                     { key: 'ctr', label: 'CTR' },
                     { key: 'cpm', label: 'CPM' },
                   ]}
-                  rows={bestAds.map((row) => ({
-                    name: row.name,
-                    amount_spent: fMoney(row.totals.amount_spent),
-                    impressions: fInt(row.totals.impressions),
-                    link_clicks: fInt(row.totals.link_clicks),
-                    leads: fInt(row.totals.leads),
-                    cpc: fMoney(row.totals.cpc),
-                    cpl: fMoney(row.totals.cpl),
-                    ctr: fPct(row.totals.ctr),
-                    cpm: fMoney(row.totals.cpm),
-                  }))}
+                  rows={bestAds.map((row) => {
+                    const mqlTotals = adMqlTotalsByName.get(normalizeEntityKey(row.name))
+                    const estMql = mqlTotals?.estimatedMql || 0
+                    const cpmql = estMql > 0 ? (mqlTotals?.amountSpent || 0) / estMql : 0
+                    return {
+                      name: row.name,
+                      amount_spent: fMoney(row.totals.amount_spent),
+                      impressions: fInt(row.totals.impressions),
+                      link_clicks: fInt(row.totals.link_clicks),
+                      leads: fInt(row.totals.leads),
+                      mql: estMql > 0 ? fInt(Math.round(estMql)) : '—',
+                      cpmql: estMql > 0 ? fMoney(cpmql) : '—',
+                      cpc: fMoney(row.totals.cpc),
+                      cpl: fMoney(row.totals.cpl),
+                      ctr: fPct(row.totals.ctr),
+                      cpm: fMoney(row.totals.cpm),
+                    }
+                  })}
                   firstColStyle={{ maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
                 />
               ) : (
@@ -920,27 +1037,36 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                     { key: 'link_clicks', label: 'Link Clicks' },
                     { key: 'landing_page_views', label: 'Landing Page Views' },
                     { key: 'leads', label: 'Leads' },
+                    { key: 'mql', label: 'MQL (est.)' },
+                    { key: 'cpmql', label: 'Custo/MQL (est.)' },
                     { key: 'cpc', label: 'CPC' },
                     { key: 'cpl', label: 'CPL' },
                     { key: 'ctr', label: 'CTR' },
                     { key: 'cpm', label: 'CPM' },
                     { key: 'connect_rate', label: 'Connect Rate' },
                   ]}
-                  rows={bestAds.map((row) => ({
-                    name: row.name,
-                    public_link: adPublicLinkByName.get(normalizeEntityKey(row.name)) || '—',
-                    amount_spent: fMoney(row.totals.amount_spent),
-                    reach: fInt(row.totals.reach),
-                    impressions: fInt(row.totals.impressions),
-                    link_clicks: fInt(row.totals.link_clicks),
-                    landing_page_views: fInt(row.totals.landing_page_views),
-                    leads: fInt(row.totals.leads),
-                    cpc: fMoney(row.totals.cpc),
-                    cpl: fMoney(row.totals.cpl),
-                    ctr: fPct(row.totals.ctr),
-                    cpm: fMoney(row.totals.cpm),
-                    connect_rate: fPct(row.totals.connect_rate),
-                  }))}
+                  rows={bestAds.map((row) => {
+                    const mqlTotals = adMqlTotalsByName.get(normalizeEntityKey(row.name))
+                    const estMql = mqlTotals?.estimatedMql || 0
+                    const cpmql = estMql > 0 ? (mqlTotals?.amountSpent || 0) / estMql : 0
+                    return {
+                      name: row.name,
+                      public_link: adPublicLinkByName.get(normalizeEntityKey(row.name)) || '—',
+                      amount_spent: fMoney(row.totals.amount_spent),
+                      reach: fInt(row.totals.reach),
+                      impressions: fInt(row.totals.impressions),
+                      link_clicks: fInt(row.totals.link_clicks),
+                      landing_page_views: fInt(row.totals.landing_page_views),
+                      leads: fInt(row.totals.leads),
+                      mql: estMql > 0 ? fInt(Math.round(estMql)) : '—',
+                      cpmql: estMql > 0 ? fMoney(cpmql) : '—',
+                      cpc: fMoney(row.totals.cpc),
+                      cpl: fMoney(row.totals.cpl),
+                      ctr: fPct(row.totals.ctr),
+                      cpm: fMoney(row.totals.cpm),
+                      connect_rate: fPct(row.totals.connect_rate),
+                    }
+                  })}
                   firstColStyle={{ maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
                 />
               )}
@@ -965,22 +1091,31 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                     { key: 'impressions', label: 'Impressions' },
                     { key: 'link_clicks', label: 'Clicks' },
                     { key: 'leads', label: 'Leads' },
+                    { key: 'mql', label: 'MQL (est.)' },
+                    { key: 'cpmql', label: 'Custo/MQL (est.)' },
                     { key: 'cpc', label: 'CPC' },
                     { key: 'cpl', label: 'CPL' },
                     { key: 'ctr', label: 'CTR' },
                     { key: 'cpm', label: 'CPM' },
                   ]}
-                  rows={bestAdsets.map((row) => ({
-                    name: row.name,
-                    amount_spent: fMoney(row.totals.amount_spent),
-                    impressions: fInt(row.totals.impressions),
-                    link_clicks: fInt(row.totals.link_clicks),
-                    leads: fInt(row.totals.leads),
-                    cpc: fMoney(row.totals.cpc),
-                    cpl: fMoney(row.totals.cpl),
-                    ctr: fPct(row.totals.ctr),
-                    cpm: fMoney(row.totals.cpm),
-                  }))}
+                  rows={bestAdsets.map((row) => {
+                    const mqlTotals = adsetMqlTotalsByName.get(normalizeEntityKey(row.name))
+                    const estMql = mqlTotals?.estimatedMql || 0
+                    const cpmql = estMql > 0 ? (mqlTotals?.amountSpent || 0) / estMql : 0
+                    return {
+                      name: row.name,
+                      amount_spent: fMoney(row.totals.amount_spent),
+                      impressions: fInt(row.totals.impressions),
+                      link_clicks: fInt(row.totals.link_clicks),
+                      leads: fInt(row.totals.leads),
+                      mql: estMql > 0 ? fInt(Math.round(estMql)) : '—',
+                      cpmql: estMql > 0 ? fMoney(cpmql) : '—',
+                      cpc: fMoney(row.totals.cpc),
+                      cpl: fMoney(row.totals.cpl),
+                      ctr: fPct(row.totals.ctr),
+                      cpm: fMoney(row.totals.cpm),
+                    }
+                  })}
                   firstColStyle={{ maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
                 />
               ) : (
@@ -993,26 +1128,35 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                     { key: 'link_clicks', label: 'Link Clicks' },
                     { key: 'landing_page_views', label: 'Landing Page Views' },
                     { key: 'leads', label: 'Leads' },
+                    { key: 'mql', label: 'MQL (est.)' },
+                    { key: 'cpmql', label: 'Custo/MQL (est.)' },
                     { key: 'cpc', label: 'CPC' },
                     { key: 'cpl', label: 'CPL' },
                     { key: 'ctr', label: 'CTR' },
                     { key: 'cpm', label: 'CPM' },
                     { key: 'connect_rate', label: 'Connect Rate' },
                   ]}
-                  rows={bestAdsets.map((row) => ({
-                    name: row.name,
-                    amount_spent: fMoney(row.totals.amount_spent),
-                    reach: fInt(row.totals.reach),
-                    impressions: fInt(row.totals.impressions),
-                    link_clicks: fInt(row.totals.link_clicks),
-                    landing_page_views: fInt(row.totals.landing_page_views),
-                    leads: fInt(row.totals.leads),
-                    cpc: fMoney(row.totals.cpc),
-                    cpl: fMoney(row.totals.cpl),
-                    ctr: fPct(row.totals.ctr),
-                    cpm: fMoney(row.totals.cpm),
-                    connect_rate: fPct(row.totals.connect_rate),
-                  }))}
+                  rows={bestAdsets.map((row) => {
+                    const mqlTotals = adsetMqlTotalsByName.get(normalizeEntityKey(row.name))
+                    const estMql = mqlTotals?.estimatedMql || 0
+                    const cpmql = estMql > 0 ? (mqlTotals?.amountSpent || 0) / estMql : 0
+                    return {
+                      name: row.name,
+                      amount_spent: fMoney(row.totals.amount_spent),
+                      reach: fInt(row.totals.reach),
+                      impressions: fInt(row.totals.impressions),
+                      link_clicks: fInt(row.totals.link_clicks),
+                      landing_page_views: fInt(row.totals.landing_page_views),
+                      leads: fInt(row.totals.leads),
+                      mql: estMql > 0 ? fInt(Math.round(estMql)) : '—',
+                      cpmql: estMql > 0 ? fMoney(cpmql) : '—',
+                      cpc: fMoney(row.totals.cpc),
+                      cpl: fMoney(row.totals.cpl),
+                      ctr: fPct(row.totals.ctr),
+                      cpm: fMoney(row.totals.cpm),
+                      connect_rate: fPct(row.totals.connect_rate),
+                    }
+                  })}
                   firstColStyle={{ maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
                 />
               )}
@@ -1101,7 +1245,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                   rows={campaignRows.map((row) => ({
                     name: row.campaign_name,
                     amount_spent: fMoney(row.totals.amount_spent),
-                    daily_budget: fMoney(row.daily_budget || 0),
+                    daily_budget: row.daily_budget && row.daily_budget > 0 ? fMoney(row.daily_budget) : '—',
                     follows: '—',
                     cost_per_follow: '—',
                     reactions: fInt(row.totals.reactions),

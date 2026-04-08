@@ -389,6 +389,8 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
     campaignMqlByName.set(campaignKey, mqlCampaign)
     campaignMqlRateByName.set(campaignKey, leadsRdCampaign > 0 ? mqlCampaign / leadsRdCampaign : globalRdMqlRate)
   }
+  const attributedMqlCount = Array.from(campaignMqlByName.values()).reduce((acc, n) => acc + n, 0)
+  const unattributedMqlCount = Math.max(0, rdMqlCount - attributedMqlCount)
 
   const funnel = selectedPlatform === 'google'
     ? [
@@ -956,24 +958,41 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                     { key: 'ctr', label: 'CTR' },
                     { key: 'cpm', label: 'CPM' },
                   ]}
-                  rows={campaignRows.map((row) => {
-                    const campaignKey = normalizeCampaignKey(row.campaign_name)
-                    const mql = campaignMqlByName.get(campaignKey) || 0
-                    const cpmql = mql > 0 ? row.totals.amount_spent / mql : 0
-                    return {
-                      name: row.campaign_name,
-                      amount_spent: fMoney(row.totals.amount_spent),
-                      impressions: fInt(row.totals.impressions),
-                      link_clicks: fInt(row.totals.link_clicks),
-                      leads: fInt(row.totals.leads),
-                      mql: mql > 0 ? fInt(mql) : '—',
-                      cpmql: mql > 0 ? fMoney(cpmql) : '—',
-                      cpc: fMoney(row.totals.cpc),
-                      cpl: fMoney(row.totals.cpl),
-                      ctr: fPct(row.totals.ctr),
-                      cpm: fMoney(row.totals.cpm),
-                    }
-                  })}
+                  rows={[
+                    ...campaignRows.map((row) => {
+                      const campaignKey = normalizeCampaignKey(row.campaign_name)
+                      const mql = campaignMqlByName.get(campaignKey) || 0
+                      const cpmql = mql > 0 ? row.totals.amount_spent / mql : 0
+                      return {
+                        name: row.campaign_name,
+                        amount_spent: fMoney(row.totals.amount_spent),
+                        impressions: fInt(row.totals.impressions),
+                        link_clicks: fInt(row.totals.link_clicks),
+                        leads: fInt(row.totals.leads),
+                        mql: mql > 0 ? fInt(mql) : '—',
+                        cpmql: mql > 0 ? fMoney(cpmql) : '—',
+                        cpc: fMoney(row.totals.cpc),
+                        cpl: fMoney(row.totals.cpl),
+                        ctr: fPct(row.totals.ctr),
+                        cpm: fMoney(row.totals.cpm),
+                      }
+                    }),
+                    ...(unattributedMqlCount > 0
+                      ? [{
+                          name: '(MQL sem campanha atribuída)',
+                          amount_spent: '—',
+                          impressions: '—',
+                          link_clicks: '—',
+                          leads: '—',
+                          mql: fInt(unattributedMqlCount),
+                          cpmql: '—',
+                          cpc: '—',
+                          cpl: '—',
+                          ctr: '—',
+                          cpm: '—',
+                        }]
+                      : [])
+                  ]}
                   firstColStyle={{ maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
                 />
               ) : (
@@ -995,28 +1014,49 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                     { key: 'cpm', label: 'CPM' },
                     { key: 'connect_rate', label: 'Connect Rate' },
                   ]}
-                  rows={campaignRows.map((row) => {
-                    const campaignKey = normalizeCampaignKey(row.campaign_name)
-                    const mql = campaignMqlByName.get(campaignKey) || 0
-                    const cpmql = mql > 0 ? row.totals.amount_spent / mql : 0
-                    return {
-                      name: row.campaign_name,
-                      amount_spent: fMoney(row.totals.amount_spent),
-                      daily_budget: row.daily_budget && row.daily_budget > 0 ? fMoney(row.daily_budget) : '—',
-                      reach: fInt(row.totals.reach),
-                      impressions: fInt(row.totals.impressions),
-                      link_clicks: fInt(row.totals.link_clicks),
-                      landing_page_views: fInt(row.totals.landing_page_views),
-                      leads: fInt(row.totals.leads),
-                      mql: mql > 0 ? fInt(mql) : '—',
-                      cpmql: mql > 0 ? fMoney(cpmql) : '—',
-                      cpc: fMoney(row.totals.cpc),
-                      cpl: fMoney(row.totals.cpl),
-                      ctr: fPct(row.totals.ctr),
-                      cpm: fMoney(row.totals.cpm),
-                      connect_rate: fPct(row.totals.connect_rate),
-                    }
-                  })}
+                  rows={[
+                    ...campaignRows.map((row) => {
+                      const campaignKey = normalizeCampaignKey(row.campaign_name)
+                      const mql = campaignMqlByName.get(campaignKey) || 0
+                      const cpmql = mql > 0 ? row.totals.amount_spent / mql : 0
+                      return {
+                        name: row.campaign_name,
+                        amount_spent: fMoney(row.totals.amount_spent),
+                        daily_budget: row.daily_budget && row.daily_budget > 0 ? fMoney(row.daily_budget) : '—',
+                        reach: fInt(row.totals.reach),
+                        impressions: fInt(row.totals.impressions),
+                        link_clicks: fInt(row.totals.link_clicks),
+                        landing_page_views: fInt(row.totals.landing_page_views),
+                        leads: fInt(row.totals.leads),
+                        mql: mql > 0 ? fInt(mql) : '—',
+                        cpmql: mql > 0 ? fMoney(cpmql) : '—',
+                        cpc: fMoney(row.totals.cpc),
+                        cpl: fMoney(row.totals.cpl),
+                        ctr: fPct(row.totals.ctr),
+                        cpm: fMoney(row.totals.cpm),
+                        connect_rate: fPct(row.totals.connect_rate),
+                      }
+                    }),
+                    ...(unattributedMqlCount > 0
+                      ? [{
+                          name: '(MQL sem campanha atribuída)',
+                          amount_spent: '—',
+                          daily_budget: '—',
+                          reach: '—',
+                          impressions: '—',
+                          link_clicks: '—',
+                          landing_page_views: '—',
+                          leads: '—',
+                          mql: fInt(unattributedMqlCount),
+                          cpmql: '—',
+                          cpc: '—',
+                          cpl: '—',
+                          ctr: '—',
+                          cpm: '—',
+                          connect_rate: '—',
+                        }]
+                      : [])
+                  ]}
                   firstColStyle={{ maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
                 />
               )}

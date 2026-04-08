@@ -114,6 +114,21 @@ async function supabasePatch(path, payload) {
   }
 }
 
+async function supabaseDelete(path) {
+  const resp = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
+    method: 'DELETE',
+    headers: {
+      apikey: SUPABASE_SERVICE_ROLE_KEY,
+      Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+      Prefer: 'return=minimal',
+    },
+  })
+
+  if (!resp.ok) {
+    throw new Error(`Supabase DELETE failed (${resp.status}): ${await resp.text()}`)
+  }
+}
+
 async function refreshRdAccessToken(refreshToken) {
   if (!RD_CLIENT_ID || !RD_CLIENT_SECRET) {
     throw new Error('Missing RD_CLIENT_ID or RD_CLIENT_SECRET for token refresh')
@@ -507,6 +522,8 @@ async function main() {
     return
   }
 
+  // Snapshot de 30 dias: evita acumular linhas antigas e inflar MQL no dashboard.
+  await supabaseDelete(`rd_leads_30d?client_id=eq.${clientId}`)
   await supabaseUpsert('rd_leads_30d', rows, 'client_id,rd_contact_uuid')
 
   const mqlCount = rows.filter((r) => r.is_mql_25k).length

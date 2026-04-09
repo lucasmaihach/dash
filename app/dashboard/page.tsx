@@ -111,6 +111,20 @@ type RdLeadRow = {
   is_mql_25k: boolean
 }
 
+const REPORT_TIMEZONE = process.env.REPORT_TIMEZONE || 'America/Sao_Paulo'
+
+function dateKeyInTimezone(value: string | null | undefined, timezone: string): string {
+  if (!value) return ''
+  const dt = new Date(value)
+  if (Number.isNaN(dt.getTime())) return ''
+  return new Intl.DateTimeFormat('sv-SE', {
+    timeZone: timezone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(dt)
+}
+
 type EntityMqlTotals = {
   estimatedMql: number
   amountSpent: number
@@ -315,7 +329,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
 
   const rdLeadsTableMissing = rdLeadsRes.error?.code === '42P01'
   const rdLeadsRows = ((rdLeadsRes.data || []) as RdLeadRow[]).filter((row) => {
-    const dateOnly = (row.created_at_rd || '').slice(0, 10)
+    const dateOnly = dateKeyInTimezone(row.created_at_rd, REPORT_TIMEZONE)
     const hasDate = Boolean(dateOnly)
     const byStart = start ? (hasDate ? dateOnly >= start : false) : true
     const byEnd = end ? (hasDate ? dateOnly <= end : false) : true

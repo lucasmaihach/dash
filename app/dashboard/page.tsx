@@ -115,6 +115,7 @@ type RdLeadRow = {
 }
 
 const REPORT_TIMEZONE = process.env.REPORT_TIMEZONE || 'America/Sao_Paulo'
+const IOX_CLIENT_ID = 'd9cc196d-f8d6-4042-9da4-6fe93a31b215'
 
 function dateKeyInTimezone(value: string | null | undefined, timezone: string): string {
   if (!value) return ''
@@ -251,14 +252,15 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
 
   const selectedPlatform: DashboardPlatform = params.platform === 'google' && hasGoogleAds ? 'google' : 'meta'
 
-  // RD ativo por cliente: apenas clientes com credencial RD ativa usam funil/cartões de RD.
+  // Regra de negócio: somente IOX usa visão RD no funil/painel executivo.
+  // Mesmo que outro cliente tenha credencial RD ativa, o dashboard padrão deve permanecer.
   const { data: rdCred } = await getSupabaseAdminClient()
     .from('client_rd_credentials')
     .select('client_id')
     .eq('client_id', effectiveClientId)
     .eq('is_active', true)
     .maybeSingle()
-  const hasRdIntegration = !!rdCred
+  const hasRdIntegration = effectiveClientId === IOX_CLIENT_ID && !!rdCred
 
   const { data: baseRows, error: baseError } = selectedPlatform === 'google'
     ? await getCachedGoogleMetrics(effectiveClientId)

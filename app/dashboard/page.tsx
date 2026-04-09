@@ -251,6 +251,15 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
 
   const selectedPlatform: DashboardPlatform = params.platform === 'google' && hasGoogleAds ? 'google' : 'meta'
 
+  // RD ativo por cliente: apenas clientes com credencial RD ativa usam funil/cartões de RD.
+  const { data: rdCred } = await getSupabaseAdminClient()
+    .from('client_rd_credentials')
+    .select('client_id')
+    .eq('client_id', effectiveClientId)
+    .eq('is_active', true)
+    .maybeSingle()
+  const hasRdIntegration = !!rdCred
+
   const { data: baseRows, error: baseError } = selectedPlatform === 'google'
     ? await getCachedGoogleMetrics(effectiveClientId)
     : await getCachedMetrics(effectiveClientId)
@@ -324,14 +333,20 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   const campaignRows = byCampaign(filtered)
 
   // Leads qualificados vindos do RD Station (base local já ingerida em rd_leads_30d)
-  const rdLeadsRes = await dataClient
-    .from('rd_leads_30d')
-    .select('created_at_rd,utm_campaign,is_mql_25k')
-    .eq('client_id', effectiveClientId)
-    .order('created_at_rd', { ascending: false })
+  let rdLeadsTableMissing = false
+  let rdLeadsRows: RdLeadRow[] = []
+  if (hasRdIntegration) {
+    const rdLeadsRes = await dataClient
+      .from('rd_leads_30d')
+      .select('created_at_rd,utm_campaign,is_mql_25k')
+      .eq('client_id', effectiveClientId)
+      .order('created_at_rd', { ascending: false })
 
-  const rdLeadsTableMissing = rdLeadsRes.error?.code === '42P01'
-  const rdLeadsRows = ((rdLeadsRes.data || []) as RdLeadRow[]).filter((row) => {
+    rdLeadsTableMissing = rdLeadsRes.error?.code === '42P01'
+    rdLeadsRows = ((rdLeadsRes.data || []) as RdLeadRow[])
+  }
+
+  rdLeadsRows = rdLeadsRows.filter((row) => {
     const dateOnly = dateKeyInTimezone(row.created_at_rd, REPORT_TIMEZONE)
     const hasDate = Boolean(dateOnly)
     const byStart = start ? (hasDate ? dateOnly >= start : false) : true
@@ -346,7 +361,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   const rdMqlCount = rdLeadsRows.filter((row) => row.is_mql_25k).length
   const costPerMql = rdMqlCount > 0 ? totals.amount_spent / rdMqlCount : 0
   const globalRdMqlRate = rdLeadsCount > 0 ? rdMqlCount / rdLeadsCount : 0
-  const realLeadsForFunnel = rdLeadsTableMissing ? totals.leads : rdLeadsCount
+  const realLeadsForFunnel = hasRdIntegration && !rdLeadsTableMissing ? rdLeadsCount : totals.leads
 
   const rdLeadsByCampaign = new Map<string, number>()
   const rdMqlByCampaign = new Map<string, number>()
@@ -417,7 +432,8 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
         { stage: 'Clicks', value: totals.link_clicks, rate: totals.impressions > 0 ? totals.link_clicks / totals.impressions : 0 },
         { stage: 'Leads', value: totals.leads, rate: totals.link_clicks > 0 ? totals.leads / totals.link_clicks : 0 },
       ]
-    : [
+    : hasRdIntegration
+      ? [
         { stage: 'Impressions', value: totals.impressions },
         { stage: 'Reach', value: totals.reach, rate: totals.impressions > 0 ? totals.reach / totals.impressions : 0 },
         { stage: 'Link Clicks', value: totals.link_clicks, rate: totals.reach > 0 ? totals.link_clicks / totals.reach : 0 },
@@ -432,10 +448,22 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
         { stage: 'Leads RD', value: realLeadsForFunnel, rate: totals.landing_page_views > 0 ? realLeadsForFunnel / totals.landing_page_views : 0 },
         { stage: 'MQL', value: rdMqlCount, rate: realLeadsForFunnel > 0 ? rdMqlCount / realLeadsForFunnel : 0 },
       ]
+      : [
+        { stage: 'Impressions', value: totals.impressions },
+        { stage: 'Reach', value: totals.reach, rate: totals.impressions > 0 ? totals.reach / totals.impressions : 0 },
+        { stage: 'Link Clicks', value: totals.link_clicks, rate: totals.reach > 0 ? totals.link_clicks / totals.reach : 0 },
+        { stage: 'View Forms', value: totals.view_forms, rate: totals.link_clicks > 0 ? totals.view_forms / totals.link_clicks : 0 },
+        { stage: 'Iniciou Forms', value: totals.form_starts, rate: totals.view_forms > 0 ? totals.form_starts / totals.view_forms : 0 },
+        { stage: 'Enviou Forms', value: totals.form_submits, rate: totals.form_starts > 0 ? totals.form_submits / totals.form_starts : 0 },
+        { stage: 'Landing Page Views', value: totals.landing_page_views, rate: totals.form_submits > 0 ? totals.landing_page_views / totals.form_submits : 0 },
+        { stage: 'Leads', value: totals.leads, rate: totals.landing_page_views > 0 ? totals.leads / totals.landing_page_views : 0 },
+      ]
 
   const totalFunnelRate = selectedPlatform === 'google'
     ? (totals.impressions > 0 ? totals.leads / totals.impressions : 0)
-    : (totals.impressions > 0 ? rdMqlCount / totals.impressions : 0)
+    : hasRdIntegration
+      ? (totals.impressions > 0 ? rdMqlCount / totals.impressions : 0)
+      : (totals.impressions > 0 ? totals.leads / totals.impressions : 0)
   const funnelVisualWidths = selectedPlatform === 'google' ? [88, 64, 40] : [92, 86, 78, 70, 62, 54, 46, 38, 30]
   const funnelWithWidth = funnel.map((step, index) => ({
     ...step,
@@ -932,9 +960,13 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                     <div className="metric"><div className="label">Custo / Enviou Forms</div><div className="value">{totals.form_submits > 0 ? fMoney(totals.cost_per_form_submit) : '—'}</div></div>
                     <div className="metric"><div className="label">Landing Page Views</div><div className="value">{fInt(totals.landing_page_views)}</div></div>
                     <div className="metric"><div className="label">Leads Gerenciador</div><div className="value">{fInt(totals.leads)}</div></div>
-                    <div className="metric"><div className="label">Leads RD</div><div className="value">{rdLeadsTableMissing ? '—' : fInt(rdLeadsCount)}</div></div>
-                    <div className="metric"><div className="label">MQL 25k (RD)</div><div className="value">{rdLeadsTableMissing ? '—' : fInt(rdMqlCount)}</div></div>
-                    <div className="metric"><div className="label">Custo por MQL</div><div className="value">{rdLeadsTableMissing || rdMqlCount === 0 ? '—' : fMoney(costPerMql)}</div></div>
+                    {hasRdIntegration ? (
+                      <>
+                        <div className="metric"><div className="label">Leads RD</div><div className="value">{rdLeadsTableMissing ? '—' : fInt(rdLeadsCount)}</div></div>
+                        <div className="metric"><div className="label">MQL 25k (RD)</div><div className="value">{rdLeadsTableMissing ? '—' : fInt(rdMqlCount)}</div></div>
+                        <div className="metric"><div className="label">Custo por MQL</div><div className="value">{rdLeadsTableMissing || rdMqlCount === 0 ? '—' : fMoney(costPerMql)}</div></div>
+                      </>
+                    ) : null}
                     <div className="metric"><div className="label">CPC</div><div className="value">{fMoney(totals.cpc)}</div></div>
                     <div className="metric"><div className="label">CPL</div><div className="value">{fMoney(totals.cpl)}</div></div>
                     <div className="metric"><div className="label">CPM</div><div className="value">{fMoney(totals.cpm)}</div></div>
@@ -955,7 +987,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
               </div>
             </section>
 
-            {rdLeadsTableMissing ? (
+            {hasRdIntegration && rdLeadsTableMissing ? (
               <section className="panel reveal d4">
                 <p className="error">
                   Tabela <code>rd_leads_30d</code> não encontrada. Execute o SQL em <code>docs/add_rd_leads_30d.sql</code>.

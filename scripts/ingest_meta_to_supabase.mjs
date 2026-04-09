@@ -79,6 +79,37 @@ function actionValue(actions, keys) {
 }
 
 const DEFAULT_LEAD_KEYS = ['lead', 'offsite_conversion.fb_pixel_lead', 'onsite_web_lead']
+const DEFAULT_VIEW_FORM_KEYS = [
+  'onsite_conversion.lead_form_view',
+  'lead_form_view',
+]
+const DEFAULT_FORM_START_KEYS = [
+  'onsite_conversion.lead_form_open',
+  'lead_form_open',
+  'onsite_conversion.lead_form_start',
+  'lead_form_start',
+]
+const DEFAULT_FORM_SUBMIT_KEYS = [
+  'onsite_conversion.lead_grouped',
+  'lead',
+  'offsite_conversion.fb_pixel_lead',
+  'onsite_web_lead',
+]
+
+function splitActionKeys(raw) {
+  return String(raw || '')
+    .split(',')
+    .map((v) => v.trim())
+    .filter(Boolean)
+}
+
+function metricValueFromActions(actions, conversions, customKeys, defaultKeys) {
+  const merged = [...splitActionKeys(customKeys), ...defaultKeys]
+  if (!merged.length) return 0
+  const byConversions = actionValue(conversions, merged)
+  const byActions = actionValue(actions, merged)
+  return Math.max(byConversions, byActions)
+}
 
 function buildEngagementFields(actions) {
   return {
@@ -93,16 +124,19 @@ function buildEngagementFields(actions) {
   }
 }
 
-function buildCampaignMetricRow(clientId, raw, leadActionKey, campaignBudgetById) {
+function buildCampaignMetricRow(clientId, raw, config, campaignBudgetById) {
   const actions = raw.actions || []
   const conversions = raw.conversions || []
   const linkClicks = actionValue(actions, ['link_click']) || toNum(raw.clicks)
   const landingPageViews = actionValue(actions, ['landing_page_view', 'omni_landing_page_view'])
   const campaignId = raw.campaign_id ? String(raw.campaign_id) : null
   const dailyBudget = campaignId ? (campaignBudgetById.get(campaignId) || 0) : 0
-  const leads = leadActionKey
-    ? (actionValue(conversions, [leadActionKey]) + actionValue(actions, DEFAULT_LEAD_KEYS))
+  const leads = config.leadActionKey
+    ? metricValueFromActions(actions, conversions, config.leadActionKey, DEFAULT_LEAD_KEYS)
     : actionValue(actions, DEFAULT_LEAD_KEYS)
+  const viewForms = metricValueFromActions(actions, conversions, config.formViewActionKey, DEFAULT_VIEW_FORM_KEYS)
+  const formStarts = metricValueFromActions(actions, conversions, config.formStartActionKey, DEFAULT_FORM_START_KEYS)
+  const formSubmits = metricValueFromActions(actions, conversions, config.formSubmitActionKey, DEFAULT_FORM_SUBMIT_KEYS)
 
   // Sem breakdown: uma linha por campanha/dia com totais corretos da API.
   // Campos de placement removidos intencionalmente para evitar dupla contagem de reach.
@@ -118,19 +152,25 @@ function buildCampaignMetricRow(clientId, raw, leadActionKey, campaignBudgetById
     link_clicks: linkClicks,
     landing_page_views: landingPageViews,
     leads: leads,
+    view_forms: viewForms,
+    form_starts: formStarts,
+    form_submits: formSubmits,
     account_name: raw.account_name || null,
     ...buildEngagementFields(actions),
   }
 }
 
-function buildAdMetricRow(clientId, raw, leadActionKey) {
+function buildAdMetricRow(clientId, raw, config) {
   const actions = raw.actions || []
   const conversions = raw.conversions || []
   const linkClicks = actionValue(actions, ['link_click']) || toNum(raw.clicks)
   const landingPageViews = actionValue(actions, ['landing_page_view', 'omni_landing_page_view'])
-  const leads = leadActionKey
-    ? (actionValue(conversions, [leadActionKey]) + actionValue(actions, DEFAULT_LEAD_KEYS))
+  const leads = config.leadActionKey
+    ? metricValueFromActions(actions, conversions, config.leadActionKey, DEFAULT_LEAD_KEYS)
     : actionValue(actions, DEFAULT_LEAD_KEYS)
+  const viewForms = metricValueFromActions(actions, conversions, config.formViewActionKey, DEFAULT_VIEW_FORM_KEYS)
+  const formStarts = metricValueFromActions(actions, conversions, config.formStartActionKey, DEFAULT_FORM_START_KEYS)
+  const formSubmits = metricValueFromActions(actions, conversions, config.formSubmitActionKey, DEFAULT_FORM_SUBMIT_KEYS)
 
   return {
     client_id: clientId,
@@ -147,6 +187,9 @@ function buildAdMetricRow(clientId, raw, leadActionKey) {
     link_clicks: linkClicks,
     landing_page_views: landingPageViews,
     leads: leads,
+    view_forms: viewForms,
+    form_starts: formStarts,
+    form_submits: formSubmits,
     account_name: raw.account_name || null,
     ...buildEngagementFields(actions),
   }
@@ -224,6 +267,48 @@ async function supabaseUpsert(table, rows, onConflict) {
       return
     }
 
+    throw new Error(`Supabase UPSERT failed (${retry.status}) after fallback: ${await retry.text()}`)
+  }
+
+  if (
+    table === 'meta_daily_campaign_metrics' &&
+    (
+      errorText.includes("Could not find the 'view_forms' column") ||
+      errorText.includes("Could not find the 'form_starts' column") ||
+      errorText.includes("Could not find the 'form_submits' column")
+    )
+  ) {
+    const rowsWithoutFormCols = rows.map(({ view_forms, form_starts, form_submits, ...rest }) => rest)
+    const retry = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(rowsWithoutFormCols)
+    })
+    if (retry.ok) {
+      console.warn('meta_daily_campaign_metrics: fallback sem colunas de form funil aplicado com sucesso')
+      return
+    }
+    throw new Error(`Supabase UPSERT failed (${retry.status}) after fallback: ${await retry.text()}`)
+  }
+
+  if (
+    table === 'meta_daily_ad_metrics' &&
+    (
+      errorText.includes("Could not find the 'view_forms' column") ||
+      errorText.includes("Could not find the 'form_starts' column") ||
+      errorText.includes("Could not find the 'form_submits' column")
+    )
+  ) {
+    const rowsWithoutFormCols = rows.map(({ view_forms, form_starts, form_submits, ...rest }) => rest)
+    const retry = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(rowsWithoutFormCols)
+    })
+    if (retry.ok) {
+      console.warn('meta_daily_ad_metrics: fallback sem colunas de form funil aplicado com sucesso')
+      return
+    }
     throw new Error(`Supabase UPSERT failed (${retry.status}) after fallback: ${await retry.text()}`)
   }
 
@@ -605,8 +690,21 @@ async function main() {
 
   const credentials = await supabaseGet('client_meta_credentials?select=client_id,access_token,is_active&is_active=eq.true')
   const accounts = await supabaseGet('client_ad_accounts?select=client_id,ad_account_id,is_active&is_active=eq.true')
-  const clientConfigs = await supabaseGet('clients?select=id,lead_action_key')
-  const leadActionKeyByClient = new Map(clientConfigs.map((c) => [c.id, c.lead_action_key || null]))
+  let clientConfigs = []
+  try {
+    clientConfigs = await supabaseGet('clients?select=id,lead_action_key,form_view_action_key,form_start_action_key,form_submit_action_key')
+  } catch {
+    clientConfigs = await supabaseGet('clients?select=id,lead_action_key')
+  }
+  const configByClient = new Map(clientConfigs.map((c) => [
+    c.id,
+    {
+      leadActionKey: c.lead_action_key || null,
+      formViewActionKey: c.form_view_action_key || null,
+      formStartActionKey: c.form_start_action_key || null,
+      formSubmitActionKey: c.form_submit_action_key || null,
+    }
+  ]))
 
   const tokenByClient = new Map()
 
@@ -652,8 +750,18 @@ async function main() {
       const adRows = []
       let insightsFailedAccounts = 0
 
-      const leadActionKey = leadActionKeyByClient.get(clientId) || null
-      if (leadActionKey) console.log(`client ${clientId}: using custom lead action key "${leadActionKey}"`)
+      const config = configByClient.get(clientId) || {
+        leadActionKey: null,
+        formViewActionKey: null,
+        formStartActionKey: null,
+        formSubmitActionKey: null,
+      }
+      if (config.leadActionKey) console.log(`client ${clientId}: using custom lead action key "${config.leadActionKey}"`)
+      if (config.formViewActionKey || config.formStartActionKey || config.formSubmitActionKey) {
+        console.log(
+          `client ${clientId}: custom form keys view="${config.formViewActionKey || '-'}" start="${config.formStartActionKey || '-'}" submit="${config.formSubmitActionKey || '-'}"`
+        )
+      }
 
       for (const adAccountId of clientAccounts) {
         try {
@@ -685,14 +793,14 @@ async function main() {
             breakdowns: []
           })
           for (const row of campaignInsights) {
-            campaignRows.push(buildCampaignMetricRow(clientId, row, leadActionKey, campaignBudgetById))
+            campaignRows.push(buildCampaignMetricRow(clientId, row, config, campaignBudgetById))
           }
 
           const adInsights = await fetchMetaInsights(accessToken, adAccountId, {
             level: META_AD_LEVEL,
             breakdowns: [],
           })
-          for (const row of adInsights) adRows.push(buildAdMetricRow(clientId, row, leadActionKey))
+          for (const row of adInsights) adRows.push(buildAdMetricRow(clientId, row, config))
         } catch (err) {
           insightsFailedAccounts++
           console.warn(`  account ${adAccountId}: insights fetch failed — ${err.message}`)
@@ -709,7 +817,7 @@ async function main() {
         const key = `${row.date}|${row.campaign_name}|${row.project_tag}`
         if (!campaignMap.has(key)) { campaignMap.set(key, { ...row }); continue }
         const existing = campaignMap.get(key)
-        for (const field of ['daily_budget','reach','impressions','amount_spent','link_clicks','landing_page_views','leads','follows','reactions','comments_count','shares','saves','post_engagement']) {
+        for (const field of ['daily_budget','reach','impressions','amount_spent','link_clicks','landing_page_views','leads','view_forms','form_starts','form_submits','follows','reactions','comments_count','shares','saves','post_engagement']) {
           existing[field] = (existing[field] || 0) + (row[field] || 0)
         }
       }

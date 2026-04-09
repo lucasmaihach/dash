@@ -5,6 +5,10 @@ create extension if not exists "pgcrypto";
 create table if not exists public.clients (
   id uuid primary key default gen_random_uuid(),
   name text not null,
+  lead_action_key text,
+  form_view_action_key text,
+  form_start_action_key text,
+  form_submit_action_key text,
   status text not null default 'active',
   created_at timestamptz not null default now()
 );
@@ -37,6 +41,12 @@ create table if not exists public.client_meta_credentials (
   updated_at timestamptz not null default now()
 );
 
+alter table if exists public.clients
+  add column if not exists lead_action_key text,
+  add column if not exists form_view_action_key text,
+  add column if not exists form_start_action_key text,
+  add column if not exists form_submit_action_key text;
+
 -- Daily metrics table consumed by dashboard
 -- Uma linha por (client_id, date, campaign_name, project_tag) — sem breakdowns de placement.
 -- Breakdowns inflariam reach/impressions pois o mesmo usuário seria contado por placement.
@@ -53,6 +63,9 @@ create table if not exists public.meta_daily_campaign_metrics (
   link_clicks numeric not null default 0,
   landing_page_views numeric not null default 0,
   leads numeric not null default 0,
+  view_forms numeric not null default 0,
+  form_starts numeric not null default 0,
+  form_submits numeric not null default 0,
   account_name text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
@@ -66,6 +79,10 @@ create index if not exists idx_metrics_client_tag_date
 
 alter table public.meta_daily_campaign_metrics
   add column if not exists daily_budget numeric not null default 0;
+alter table public.meta_daily_campaign_metrics
+  add column if not exists view_forms numeric not null default 0,
+  add column if not exists form_starts numeric not null default 0,
+  add column if not exists form_submits numeric not null default 0;
 
 -- Auto updated_at
 create or replace function public.set_updated_at()
@@ -151,6 +168,9 @@ create table if not exists public.meta_daily_ad_metrics (
   link_clicks numeric not null default 0,
   landing_page_views numeric not null default 0,
   leads numeric not null default 0,
+  view_forms numeric not null default 0,
+  form_starts numeric not null default 0,
+  form_submits numeric not null default 0,
   account_name text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
@@ -161,6 +181,11 @@ create index if not exists idx_ad_metrics_client_date
   on public.meta_daily_ad_metrics (client_id, date);
 create index if not exists idx_ad_metrics_client_tag_date
   on public.meta_daily_ad_metrics (client_id, project_tag, date);
+
+alter table if exists public.meta_daily_ad_metrics
+  add column if not exists view_forms numeric not null default 0,
+  add column if not exists form_starts numeric not null default 0,
+  add column if not exists form_submits numeric not null default 0;
 
 drop trigger if exists trg_ad_metrics_set_updated_at on public.meta_daily_ad_metrics;
 create trigger trg_ad_metrics_set_updated_at

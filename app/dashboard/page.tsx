@@ -19,7 +19,7 @@ function getCachedMetrics(clientId: string) {
       const admin = getSupabaseAdminClient()
       const { data, error } = await admin
         .from('meta_daily_campaign_metrics')
-        .select('date,campaign_name,project_tag,daily_budget,reach,impressions,amount_spent,link_clicks,landing_page_views,leads,follows,reactions,comments_count,shares,saves,post_engagement')
+        .select('date,campaign_name,project_tag,daily_budget,reach,impressions,amount_spent,link_clicks,landing_page_views,leads,view_forms,form_starts,form_submits,follows,reactions,comments_count,shares,saves,post_engagement')
         .eq('client_id', clientId)
         .order('date', { ascending: false })
 
@@ -58,6 +58,9 @@ function getCachedGoogleMetrics(clientId: string) {
         link_clicks: r.clicks ?? 0,
         landing_page_views: 0,
         leads: r.leads ?? 0,
+        view_forms: 0,
+        form_starts: 0,
+        form_submits: 0,
       })) as MetricRow[]
       return { data: mapped, error }
     },
@@ -418,10 +421,13 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
         { stage: 'Impressions', value: totals.impressions },
         { stage: 'Reach', value: totals.reach, rate: totals.impressions > 0 ? totals.reach / totals.impressions : 0 },
         { stage: 'Link Clicks', value: totals.link_clicks, rate: totals.reach > 0 ? totals.link_clicks / totals.reach : 0 },
+        { stage: 'View Forms', value: totals.view_forms, rate: totals.link_clicks > 0 ? totals.view_forms / totals.link_clicks : 0 },
+        { stage: 'Iniciou Forms', value: totals.form_starts, rate: totals.view_forms > 0 ? totals.form_starts / totals.view_forms : 0 },
+        { stage: 'Enviou Forms', value: totals.form_submits, rate: totals.form_starts > 0 ? totals.form_submits / totals.form_starts : 0 },
         {
           stage: 'Landing Page Views',
           value: totals.landing_page_views,
-          rate: totals.link_clicks > 0 ? totals.landing_page_views / totals.link_clicks : 0
+          rate: totals.form_submits > 0 ? totals.landing_page_views / totals.form_submits : 0
         },
         { stage: 'Leads RD', value: realLeadsForFunnel, rate: totals.landing_page_views > 0 ? realLeadsForFunnel / totals.landing_page_views : 0 },
         { stage: 'MQL', value: rdMqlCount, rate: realLeadsForFunnel > 0 ? rdMqlCount / realLeadsForFunnel : 0 },
@@ -430,7 +436,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   const totalFunnelRate = selectedPlatform === 'google'
     ? (totals.impressions > 0 ? totals.leads / totals.impressions : 0)
     : (totals.impressions > 0 ? rdMqlCount / totals.impressions : 0)
-  const funnelVisualWidths = selectedPlatform === 'google' ? [88, 64, 40] : [90, 80, 68, 56, 44, 34]
+  const funnelVisualWidths = selectedPlatform === 'google' ? [88, 64, 40] : [92, 86, 78, 70, 62, 54, 46, 38, 30]
   const funnelWithWidth = funnel.map((step, index) => ({
     ...step,
     widthPct: funnelVisualWidths[index] ?? 40,
@@ -483,6 +489,9 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
         link_clicks: r.clicks ?? 0,
         landing_page_views: 0,
         leads: r.leads ?? 0,
+        view_forms: 0,
+        form_starts: 0,
+        form_submits: 0,
       })) as AdMetricRow[]
 
     for (const row of gAdRows) {
@@ -514,12 +523,21 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   }
 
   if (needsAdLevelData && selectedPlatform === 'meta') {
-    const adRes = await dataClient
+    let adRes = await dataClient
       .from('meta_daily_ad_metrics')
-      .select('date,campaign_name,project_tag,adset_name,ad_name,reach,impressions,amount_spent,link_clicks,landing_page_views,leads,follows,reactions,comments_count,shares,saves,post_engagement')
+      .select('date,campaign_name,project_tag,adset_name,ad_name,reach,impressions,amount_spent,link_clicks,landing_page_views,leads,view_forms,form_starts,form_submits,follows,reactions,comments_count,shares,saves,post_engagement')
       .eq('client_id', effectiveClientId)
       .gte('date', start)
       .lte('date', end)
+
+    if (adRes.error?.code === '42703') {
+      adRes = await dataClient
+        .from('meta_daily_ad_metrics')
+        .select('date,campaign_name,project_tag,adset_name,ad_name,reach,impressions,amount_spent,link_clicks,landing_page_views,leads,follows,reactions,comments_count,shares,saves,post_engagement')
+        .eq('client_id', effectiveClientId)
+        .gte('date', start)
+        .lte('date', end)
+    }
 
     adTableMissing = adRes.error?.code === '42P01'
     const adRows = ((adRes.data || []) as AdMetricRow[]).filter((r) => {
@@ -906,6 +924,12 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                     <div className="metric"><div className="label">Impressões</div><div className="value">{fInt(totals.impressions)}</div></div>
                     <div className="metric"><div className="label">Frequência</div><div className="value">{fFloat(totals.frequency)}</div></div>
                     <div className="metric"><div className="label">Link Clicks</div><div className="value">{fInt(totals.link_clicks)}</div></div>
+                    <div className="metric"><div className="label">View Forms</div><div className="value">{fInt(totals.view_forms)}</div></div>
+                    <div className="metric"><div className="label">Custo / View Forms</div><div className="value">{totals.view_forms > 0 ? fMoney(totals.cost_per_view_form) : '—'}</div></div>
+                    <div className="metric"><div className="label">Iniciou Forms</div><div className="value">{fInt(totals.form_starts)}</div></div>
+                    <div className="metric"><div className="label">Custo / Iniciou Forms</div><div className="value">{totals.form_starts > 0 ? fMoney(totals.cost_per_form_start) : '—'}</div></div>
+                    <div className="metric"><div className="label">Enviou Forms</div><div className="value">{fInt(totals.form_submits)}</div></div>
+                    <div className="metric"><div className="label">Custo / Enviou Forms</div><div className="value">{totals.form_submits > 0 ? fMoney(totals.cost_per_form_submit) : '—'}</div></div>
                     <div className="metric"><div className="label">Landing Page Views</div><div className="value">{fInt(totals.landing_page_views)}</div></div>
                     <div className="metric"><div className="label">Leads Gerenciador</div><div className="value">{fInt(totals.leads)}</div></div>
                     <div className="metric"><div className="label">Leads RD</div><div className="value">{rdLeadsTableMissing ? '—' : fInt(rdLeadsCount)}</div></div>

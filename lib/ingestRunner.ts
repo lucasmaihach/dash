@@ -39,7 +39,12 @@ function buildIngestWindow(mode: IngestMode) {
   return null
 }
 
-async function runScript(scriptName: string, clientId?: string, options: IngestOptions = {}) {
+async function runScript(
+  scriptName: string,
+  clientId?: string,
+  options: IngestOptions = {},
+  extraEnv: Record<string, string> = {}
+) {
   const cwd = process.cwd()
   const scriptPath = path.join(cwd, 'scripts', scriptName)
   const envFile = path.join(cwd, '.env.local')
@@ -59,6 +64,7 @@ async function runScript(scriptName: string, clientId?: string, options: IngestO
             INGEST_MODE: mode,
           }
         : {}),
+      ...extraEnv,
     },
     maxBuffer: 10 * 1024 * 1024,
     timeout: 1000 * 60 * 15,
@@ -84,6 +90,30 @@ export async function runIngest(clientId?: string, options: IngestOptions = {}) 
     // Ignora erros de "sem clientes" — cliente pode não ter Google configurado
     if (!message.includes('no active Google') && !message.includes('no clients')) {
       errors.push(`Google: ${message}`)
+    }
+  }
+
+  // Roda RD para cliente específico (não roda em "all_clients")
+  // Segmentações padrão do projeto:
+  // - LEADS_30D_IOX
+  // - G77 - Qualificado 25k
+  if (clientId) {
+    try {
+      await runScript(
+        'ingest_rd_to_supabase.mjs',
+        clientId,
+        options,
+        {
+          RD_LEADS_SEGMENT_NAME: process.env.RD_LEADS_SEGMENT_NAME || 'LEADS_30D_IOX',
+          RD_MQL_SEGMENT_NAME: process.env.RD_MQL_SEGMENT_NAME || 'G77 - Qualificado 25k',
+        }
+      )
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      // Cliente pode não ter RD conectado ainda.
+      if (!message.includes('No active RD credentials found')) {
+        errors.push(`RD: ${message}`)
+      }
     }
   }
 

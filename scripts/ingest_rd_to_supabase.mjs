@@ -114,22 +114,11 @@ async function supabasePatch(path, payload) {
   }
 }
 
-async function backfillMissingCreatedAtWithImportedAt(clientId) {
+async function countMissingCreatedAt(clientId) {
   const missing = await supabaseGet(
-    `rd_leads_30d?select=rd_contact_uuid,imported_at&client_id=eq.${clientId}&created_at_rd=is.null`
+    `rd_leads_30d?select=rd_contact_uuid&client_id=eq.${clientId}&created_at_rd=is.null`
   )
-
-  let patched = 0
-  for (const row of missing) {
-    if (!row?.rd_contact_uuid || !row?.imported_at) continue
-    await supabasePatch(
-      `rd_leads_30d?client_id=eq.${clientId}&rd_contact_uuid=eq.${encodeURIComponent(row.rd_contact_uuid)}`,
-      { created_at_rd: row.imported_at }
-    )
-    patched += 1
-  }
-
-  return patched
+  return Array.isArray(missing) ? missing.length : 0
 }
 
 async function supabaseDelete(path) {
@@ -341,7 +330,7 @@ function pickBudget(contact) {
   return null
 }
 
-function normalizeLeadRow(clientId, contact, isMqlFromSegment) {
+function normalizeLeadRow(clientId, contact, isMqlFromSegment, allowBudgetFallback) {
   const contactId =
     contact?.uuid ||
     contact?.id ||
@@ -360,12 +349,13 @@ function normalizeLeadRow(clientId, contact, isMqlFromSegment) {
     rd_contact_uuid: String(contactId),
     email: contact?.email || null,
     name: contact?.name || null,
-    created_at_rd: contact?.created_at || contact?.createdAt || contact?.first_conversion_date || null,
+    // Regra de data para o dashboard: usar data de criação do lead (não conversão).
+    created_at_rd: contact?.created_at || contact?.createdAt || null,
     utm_source: contact?.utm_source || null,
     utm_medium: contact?.utm_medium || null,
     utm_campaign: contact?.utm_campaign || null,
     budget_value: budgetValue,
-    is_mql_25k: Boolean(isMqlFromSegment || isMqlByBudget),
+    is_mql_25k: Boolean(isMqlFromSegment || (allowBudgetFallback && isMqlByBudget)),
   }
 }
 
@@ -446,6 +436,7 @@ async function main() {
   const mqlContacts = mqlSeg
     ? await fetchAllSegmentContacts(mqlSeg.id || mqlSeg.uuid, accessToken)
     : []
+  const allowBudgetFallback = !mqlSeg
 
   const mqlSet = new Set(
     mqlContacts
@@ -521,7 +512,8 @@ async function main() {
     .map((c) => {
       const id = String(c?.uuid || c?.id || c?.contact_uuid || c?.contact_id || c?.identifier || '')
       const detailed = detailsById.get(id) || c
-      const row = normalizeLeadRow(clientId, detailed, mqlSet.has(id))
+      const mergedContact = { ...(c || {}), ...(detailed || {}) }
+      const row = normalizeLeadRow(clientId, mergedContact, mqlSet.has(id), allowBudgetFallback)
       if (!row) return null
       const utm = utmById.get(id)
       if (utm) {
@@ -532,7 +524,7 @@ async function main() {
           row.utm_campaign ||
           utm.conversion_identifier ||
           row.utm_campaign
-        row.created_at_rd = row.created_at_rd || utm.conversion_at || row.created_at_rd
+        // Mantém created_at_rd baseado em criação do lead, sem sobrescrever por conversão.
       }
       return row
     })
@@ -546,11 +538,11 @@ async function main() {
   // Snapshot de 30 dias: evita acumular linhas antigas e inflar MQL no dashboard.
   await supabaseDelete(`rd_leads_30d?client_id=eq.${clientId}`)
   await supabaseUpsert('rd_leads_30d', rows, 'client_id,rd_contact_uuid')
-  const patchedMissingDates = await backfillMissingCreatedAtWithImportedAt(clientId)
+  const missingCreatedAt = await countMissingCreatedAt(clientId)
 
   const mqlCount = rows.filter((r) => r.is_mql_25k).length
   console.log(
-    `Upsert complete: ${rows.length} leads, ${mqlCount} MQL (threshold ${RD_MQL_BUDGET_THRESHOLD}), backfilled_dates=${patchedMissingDates}`
+    `Upsert complete: ${rows.length} leads, ${mqlCount} MQL (threshold ${RD_MQL_BUDGET_THRESHOLD}), missing_created_at=${missingCreatedAt}`
   )
 }
 

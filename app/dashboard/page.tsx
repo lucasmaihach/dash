@@ -329,6 +329,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   const rdMqlCount = rdLeadsRows.filter((row) => row.is_mql_25k).length
   const costPerMql = rdMqlCount > 0 ? totals.amount_spent / rdMqlCount : 0
   const globalRdMqlRate = rdLeadsCount > 0 ? rdMqlCount / rdLeadsCount : 0
+  const realLeadsForFunnel = rdLeadsTableMissing ? totals.leads : rdLeadsCount
 
   const rdLeadsByCampaign = new Map<string, number>()
   const rdMqlByCampaign = new Map<string, number>()
@@ -408,8 +409,8 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
           value: totals.landing_page_views,
           rate: totals.link_clicks > 0 ? totals.landing_page_views / totals.link_clicks : 0
         },
-        { stage: 'Leads', value: totals.leads, rate: totals.landing_page_views > 0 ? totals.leads / totals.landing_page_views : 0 },
-        { stage: 'MQL', value: rdMqlCount, rate: totals.leads > 0 ? rdMqlCount / totals.leads : 0 },
+        { stage: 'Leads RD', value: realLeadsForFunnel, rate: totals.landing_page_views > 0 ? realLeadsForFunnel / totals.landing_page_views : 0 },
+        { stage: 'MQL', value: rdMqlCount, rate: realLeadsForFunnel > 0 ? rdMqlCount / realLeadsForFunnel : 0 },
       ]
 
   const totalFunnelRate = selectedPlatform === 'google'
@@ -892,7 +893,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                     <div className="metric"><div className="label">Frequência</div><div className="value">{fFloat(totals.frequency)}</div></div>
                     <div className="metric"><div className="label">Link Clicks</div><div className="value">{fInt(totals.link_clicks)}</div></div>
                     <div className="metric"><div className="label">Landing Page Views</div><div className="value">{fInt(totals.landing_page_views)}</div></div>
-                    <div className="metric"><div className="label">Leads</div><div className="value">{fInt(totals.leads)}</div></div>
+                    <div className="metric"><div className="label">Leads Gerenciador</div><div className="value">{fInt(totals.leads)}</div></div>
                     <div className="metric"><div className="label">Leads RD</div><div className="value">{rdLeadsTableMissing ? '—' : fInt(rdLeadsCount)}</div></div>
                     <div className="metric"><div className="label">MQL 25k (RD)</div><div className="value">{rdLeadsTableMissing ? '—' : fInt(rdMqlCount)}</div></div>
                     <div className="metric"><div className="label">Custo por MQL</div><div className="value">{rdLeadsTableMissing || rdMqlCount === 0 ? '—' : fMoney(costPerMql)}</div></div>

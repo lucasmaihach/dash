@@ -438,6 +438,22 @@ async function main() {
     : []
   const allowBudgetFallback = !mqlSeg
 
+  // Algumas contas do RD podem retornar contatos no segmento MQL que não aparecem na
+  // segmentação-base de leads no mesmo instante (lag de indexação/regra).
+  // Para evitar perder MQL no dashboard, fazemos união de contatos sem duplicar.
+  const contactsById = new Map()
+  for (const c of leadContacts) {
+    const id = c?.uuid || c?.id || c?.contact_uuid || c?.contact_id || c?.identifier
+    if (!id) continue
+    contactsById.set(String(id), c)
+  }
+  for (const c of mqlContacts) {
+    const id = c?.uuid || c?.id || c?.contact_uuid || c?.contact_id || c?.identifier
+    if (!id) continue
+    if (!contactsById.has(String(id))) contactsById.set(String(id), c)
+  }
+  const baseContacts = Array.from(contactsById.values())
+
   const mqlSet = new Set(
     mqlContacts
       .map((c) => c?.uuid || c?.id || c?.contact_uuid || c?.contact_id || c?.identifier)
@@ -483,8 +499,8 @@ async function main() {
 
   const detailsById = new Map()
   const utmById = new Map()
-  for (let i = 0; i < leadContacts.length; i += 10) {
-    const chunk = leadContacts.slice(i, i + 10)
+  for (let i = 0; i < baseContacts.length; i += 10) {
+    const chunk = baseContacts.slice(i, i + 10)
     const detailedChunk = await Promise.all(
       chunk.map(async (c) => {
         const id = c?.uuid || c?.id || c?.contact_uuid || c?.contact_id || c?.identifier
@@ -508,7 +524,7 @@ async function main() {
     }
   }
 
-  const rows = leadContacts
+  const rows = baseContacts
     .map((c) => {
       const id = String(c?.uuid || c?.id || c?.contact_uuid || c?.contact_id || c?.identifier || '')
       const detailed = detailsById.get(id) || c
@@ -541,8 +557,18 @@ async function main() {
   const missingCreatedAt = await countMissingCreatedAt(clientId)
 
   const mqlCount = rows.filter((r) => r.is_mql_25k).length
+  const leadIds = new Set(
+    leadContacts
+      .map((lc) => lc?.uuid || lc?.id || lc?.contact_uuid || lc?.contact_id || lc?.identifier)
+      .filter(Boolean)
+      .map(String)
+  )
+  const mqlOnlyCount = mqlContacts.filter((c) => {
+    const id = c?.uuid || c?.id || c?.contact_uuid || c?.contact_id || c?.identifier
+    return id && !leadIds.has(String(id))
+  }).length
   console.log(
-    `Upsert complete: ${rows.length} leads, ${mqlCount} MQL (threshold ${RD_MQL_BUDGET_THRESHOLD}), missing_created_at=${missingCreatedAt}`
+    `Upsert complete: ${rows.length} leads, ${mqlCount} MQL (threshold ${RD_MQL_BUDGET_THRESHOLD}), mql_only_added=${mqlOnlyCount}, missing_created_at=${missingCreatedAt}`
   )
 }
 

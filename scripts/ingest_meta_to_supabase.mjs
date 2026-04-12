@@ -16,6 +16,7 @@ const META_LIMIT = Number(process.env.META_LIMIT || '500')
 const INGEST_ONLY_CLIENT_ID = (process.env.INGEST_ONLY_CLIENT_ID || '').trim()
 const INGEST_DATE_SINCE = (process.env.INGEST_DATE_SINCE || '').trim()
 const INGEST_DATE_UNTIL = (process.env.INGEST_DATE_UNTIL || '').trim()
+const AGENCIA_CLIENT_ID = 'b8724c80-9c00-48ce-b9e4-245ba9a69a20'
 // META_BREAKDOWNS foi removido da ingestão de campanhas.
 // Breakdowns inflavam reach/impressions (o mesmo usuário contado por placement).
 // A API retorna totais corretos sem breakdowns. Mantido aqui apenas como referência.
@@ -95,6 +96,10 @@ const DEFAULT_FORM_SUBMIT_KEYS = [
   'offsite_conversion.fb_pixel_lead',
   'onsite_web_lead',
 ]
+const AGENCIA_SCHEDULE_MEETING_KEYS = [
+  'invitee_meeting_scheduled',
+  'offsite_conversion.fb_pixel_custom.invitee_meeting_scheduled',
+]
 
 function splitActionKeys(raw) {
   return String(raw || '')
@@ -109,6 +114,15 @@ function metricValueFromActions(actions, conversions, customKeys, defaultKeys) {
   const byConversions = actionValue(conversions, merged)
   const byActions = actionValue(actions, merged)
   return Math.max(byConversions, byActions)
+}
+
+function getEffectiveLeadActionKey(clientId, configuredLeadActionKey) {
+  // Agência: "Leads/Reuniões Agendadas" deve usar o evento custom do Calendly.
+  if (clientId === AGENCIA_CLIENT_ID) {
+    const merged = [...AGENCIA_SCHEDULE_MEETING_KEYS, ...splitActionKeys(configuredLeadActionKey)]
+    return Array.from(new Set(merged)).join(',')
+  }
+  return configuredLeadActionKey || null
 }
 
 function buildEngagementFields(actions) {
@@ -756,6 +770,7 @@ async function main() {
         formStartActionKey: null,
         formSubmitActionKey: null,
       }
+      config.leadActionKey = getEffectiveLeadActionKey(clientId, config.leadActionKey)
       if (config.leadActionKey) console.log(`client ${clientId}: using custom lead action key "${config.leadActionKey}"`)
       if (config.formViewActionKey || config.formStartActionKey || config.formSubmitActionKey) {
         console.log(

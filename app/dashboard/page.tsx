@@ -487,7 +487,19 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   const funnelWithWidth = funnel.map((step, index) => ({
     ...step,
     widthPct: funnelVisualWidths[index] ?? 40,
-    transitionRate: index === 0 ? null : step.rate || 0
+    transitionRate: index === 0 ? null : step.rate || 0,
+    costPerStage: (() => {
+      const stageName = String(step.stage || '').toLowerCase()
+      const shouldShowCost =
+        stageName === 'clicks' ||
+        stageName.includes('link clicks') ||
+        stageName.includes('view forms') ||
+        stageName.includes('iniciou forms') ||
+        stageName.includes('enviou forms') ||
+        stageName.includes('reuniões agendadas') ||
+        stageName.includes('invitee_meeting_scheduled')
+      return shouldShowCost && step.value > 0 ? totals.amount_spent / step.value : null
+    })()
   }))
 
   const needsAdLevelData = selectedView === 'ads' || selectedView === 'adsets' || selectedView === 'creatives' || selectedView === 'seguidores'
@@ -1026,7 +1038,12 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                     <div className="funnel-bar" style={{ width: `${step.widthPct}%` }}>
                       <span className="funnel-title">{step.stage}</span>
                       <span className="funnel-value">{fInt(step.value)}</span>
-                      {index > 0 ? <span className="funnel-rate">Taxa: {fPct(step.transitionRate || 0)}</span> : <span />}
+                      {index > 0 ? (
+                        <span className="funnel-rate">
+                          Taxa: {fPct(step.transitionRate || 0)}
+                          {step.costPerStage !== null ? ` · Custo: ${fMoney(step.costPerStage)}` : ''}
+                        </span>
+                      ) : <span />}
                     </div>
                   </div>
                 ))}

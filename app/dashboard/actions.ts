@@ -1,6 +1,7 @@
 'use server'
 
 import { redirect } from 'next/navigation'
+import { revalidateTag } from 'next/cache'
 import { getSupabaseServerClient } from '@/lib/supabase/server'
 import { getSupabaseAdminClient } from '@/lib/supabase/admin'
 import { runIngest } from '@/lib/ingestRunner'
@@ -92,6 +93,9 @@ export async function refreshClientDataAction(formData: FormData) {
   let ingestError: unknown = null
   try {
     await runIngest(effectiveClientId, { mode: 'refresh' })
+    // Garante que a UI reflita os dados recém ingeridos mesmo se a revalidação
+    // externa do script falhar (ex.: APP_BASE_URL/REVALIDATE_SECRET).
+    revalidateTag(`metrics:${effectiveClientId}`)
   } catch (err) {
     console.error('[refreshClientDataAction] ingest:', err)
     ingestError = err

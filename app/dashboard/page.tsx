@@ -267,6 +267,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
     .maybeSingle()
   const useRdMode = effectiveClientId === IOX_CLIENT_ID && !!rdCred
   const useAgencyFormMode = effectiveClientId === AGENCIA_CLIENT_ID
+  const agencyLeadLabel = 'Reuniões Agendadas'
 
   const { data: baseRows, error: baseError } = selectedPlatform === 'google'
     ? await getCachedGoogleMetrics(effectiveClientId)
@@ -458,11 +459,11 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
         { stage: 'Impressions', value: totals.impressions },
         { stage: 'Reach', value: totals.reach, rate: totals.impressions > 0 ? totals.reach / totals.impressions : 0 },
         { stage: 'Link Clicks', value: totals.link_clicks, rate: totals.reach > 0 ? totals.link_clicks / totals.reach : 0 },
-        { stage: 'View Forms', value: totals.view_forms, rate: totals.link_clicks > 0 ? totals.view_forms / totals.link_clicks : 0 },
+        { stage: 'Landing Page Views', value: totals.landing_page_views, rate: totals.link_clicks > 0 ? totals.landing_page_views / totals.link_clicks : 0 },
+        { stage: 'View Forms', value: totals.view_forms, rate: totals.landing_page_views > 0 ? totals.view_forms / totals.landing_page_views : 0 },
         { stage: 'Iniciou Forms', value: totals.form_starts, rate: totals.view_forms > 0 ? totals.form_starts / totals.view_forms : 0 },
         { stage: 'Enviou Forms', value: totals.form_submits, rate: totals.form_starts > 0 ? totals.form_submits / totals.form_starts : 0 },
-        { stage: 'Landing Page Views', value: totals.landing_page_views, rate: totals.form_submits > 0 ? totals.landing_page_views / totals.form_submits : 0 },
-        { stage: 'Leads', value: totals.leads, rate: totals.landing_page_views > 0 ? totals.leads / totals.landing_page_views : 0 },
+        { stage: agencyLeadLabel, value: totals.leads, rate: totals.form_submits > 0 ? totals.leads / totals.form_submits : 0 },
       ]
       : [
         { stage: 'Impressions', value: totals.impressions },
@@ -482,7 +483,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
     : useRdMode
       ? [90, 80, 68, 56, 44, 34]
       : useAgencyFormMode
-        ? [92, 86, 78, 70, 62, 54, 46, 38, 30]
+        ? [92, 84, 76, 68, 60, 52, 44, 36]
         : [90, 80, 68, 56, 44]
   const funnelWithWidth = funnel.map((step, index) => ({
     ...step,
@@ -982,7 +983,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                       </>
                     ) : null}
                     <div className="metric"><div className="label">Landing Page Views</div><div className="value">{fInt(totals.landing_page_views)}</div></div>
-                    <div className="metric"><div className="label">Leads Gerenciador</div><div className="value">{fInt(totals.leads)}</div></div>
+                    <div className="metric"><div className="label">{useAgencyFormMode ? agencyLeadLabel : 'Leads Gerenciador'}</div><div className="value">{fInt(totals.leads)}</div></div>
                     {useRdMode ? (
                       <>
                         <div className="metric"><div className="label">Leads RD</div><div className="value">{rdLeadsTableMissing ? '—' : fInt(rdLeadsCount)}</div></div>
@@ -1045,7 +1046,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                     { key: 'amount_spent', label: 'Amount Spent' },
                     { key: 'impressions', label: 'Impressions' },
                     { key: 'link_clicks', label: 'Clicks' },
-                    { key: 'leads', label: 'Leads' },
+                    { key: 'leads', label: useAgencyFormMode ? agencyLeadLabel : 'Leads' },
                     { key: 'mql', label: 'MQL' },
                     { key: 'cpmql', label: 'Custo/MQL' },
                     { key: 'cpc', label: 'CPC' },
@@ -1100,7 +1101,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                       { key: 'impressions', label: 'Impressions' },
                     { key: 'link_clicks', label: 'Link Clicks' },
                     { key: 'landing_page_views', label: 'Landing Page Views' },
-                    { key: 'leads', label: 'Leads' },
+                    { key: 'leads', label: useAgencyFormMode ? agencyLeadLabel : 'Leads' },
                     { key: 'mql', label: 'MQL' },
                     { key: 'cpmql', label: 'Custo/MQL' },
                     { key: 'cpc', label: 'CPC' },
@@ -1188,7 +1189,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                     { key: 'amount_spent', label: 'Amount Spent' },
                     { key: 'impressions', label: 'Impressions' },
                     { key: 'link_clicks', label: 'Clicks' },
-                    { key: 'leads', label: 'Leads' },
+                    { key: 'leads', label: useAgencyFormMode ? agencyLeadLabel : 'Leads' },
                     { key: 'mql', label: 'MQL (est.)' },
                     { key: 'cpmql', label: 'Custo/MQL (est.)' },
                     { key: 'cpc', label: 'CPC' },
@@ -1226,7 +1227,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                     { key: 'impressions', label: 'Impressions' },
                     { key: 'link_clicks', label: 'Link Clicks' },
                     { key: 'landing_page_views', label: 'Landing Page Views' },
-                    { key: 'leads', label: 'Leads' },
+                    { key: 'leads', label: useAgencyFormMode ? agencyLeadLabel : 'Leads' },
                     { key: 'mql', label: 'MQL (est.)' },
                     { key: 'cpmql', label: 'Custo/MQL (est.)' },
                     { key: 'cpc', label: 'CPC' },

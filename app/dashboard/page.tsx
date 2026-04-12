@@ -459,8 +459,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
         { stage: 'Impressions', value: totals.impressions },
         { stage: 'Reach', value: totals.reach, rate: totals.impressions > 0 ? totals.reach / totals.impressions : 0 },
         { stage: 'Link Clicks', value: totals.link_clicks, rate: totals.reach > 0 ? totals.link_clicks / totals.reach : 0 },
-        { stage: 'Landing Page Views', value: totals.landing_page_views, rate: totals.link_clicks > 0 ? totals.landing_page_views / totals.link_clicks : 0 },
-        { stage: 'View Forms', value: totals.view_forms, rate: totals.landing_page_views > 0 ? totals.view_forms / totals.landing_page_views : 0 },
+        { stage: 'View Forms', value: totals.view_forms, rate: totals.link_clicks > 0 ? totals.view_forms / totals.link_clicks : 0 },
         { stage: 'Iniciou Forms', value: totals.form_starts, rate: totals.view_forms > 0 ? totals.form_starts / totals.view_forms : 0 },
         { stage: 'Enviou Forms', value: totals.form_submits, rate: totals.form_starts > 0 ? totals.form_submits / totals.form_starts : 0 },
         { stage: agencyLeadLabel, value: totals.leads, rate: totals.form_submits > 0 ? totals.leads / totals.form_submits : 0 },
@@ -483,7 +482,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
     : useRdMode
       ? [90, 80, 68, 56, 44, 34]
       : useAgencyFormMode
-        ? [92, 84, 76, 68, 60, 52, 44, 36]
+        ? [92, 84, 74, 64, 54, 44, 36]
         : [90, 80, 68, 56, 44]
   const funnelWithWidth = funnel.map((step, index) => ({
     ...step,

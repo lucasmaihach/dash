@@ -10,6 +10,8 @@ import { SortableTable } from './SortableTable'
 import { AdCreativesGrid, type CreativeCard } from './AdCreativesGrid'
 import { SubmitButton } from '@/app/components/SubmitButton'
 
+export const dynamic = 'force-dynamic'
+
 // Cache da query principal por 2 minutos — isolado por cliente.
 // A key inclui o clientId explicitamente para garantir entradas separadas no cache.
 // A tag `metrics:<clientId>` permite invalidação granular via /api/revalidate após ingestão.

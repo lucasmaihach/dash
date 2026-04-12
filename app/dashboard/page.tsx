@@ -445,13 +445,10 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
         { stage: 'Impressions', value: totals.impressions },
         { stage: 'Reach', value: totals.reach, rate: totals.impressions > 0 ? totals.reach / totals.impressions : 0 },
         { stage: 'Link Clicks', value: totals.link_clicks, rate: totals.reach > 0 ? totals.link_clicks / totals.reach : 0 },
-        { stage: 'View Forms', value: totals.view_forms, rate: totals.link_clicks > 0 ? totals.view_forms / totals.link_clicks : 0 },
-        { stage: 'Iniciou Forms', value: totals.form_starts, rate: totals.view_forms > 0 ? totals.form_starts / totals.view_forms : 0 },
-        { stage: 'Enviou Forms', value: totals.form_submits, rate: totals.form_starts > 0 ? totals.form_submits / totals.form_starts : 0 },
         {
           stage: 'Landing Page Views',
           value: totals.landing_page_views,
-          rate: totals.form_submits > 0 ? totals.landing_page_views / totals.form_submits : 0
+          rate: totals.link_clicks > 0 ? totals.landing_page_views / totals.link_clicks : 0
         },
         { stage: 'Leads RD', value: realLeadsForFunnel, rate: totals.landing_page_views > 0 ? realLeadsForFunnel / totals.landing_page_views : 0 },
         { stage: 'MQL', value: rdMqlCount, rate: realLeadsForFunnel > 0 ? rdMqlCount / realLeadsForFunnel : 0 },
@@ -482,9 +479,11 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
       : (totals.impressions > 0 ? totals.leads / totals.impressions : 0)
   const funnelVisualWidths = selectedPlatform === 'google'
     ? [88, 64, 40]
-    : useRdMode || useAgencyFormMode
-      ? [92, 86, 78, 70, 62, 54, 46, 38, 30]
-      : [90, 80, 68, 56, 44]
+    : useRdMode
+      ? [90, 80, 68, 56, 44, 34]
+      : useAgencyFormMode
+        ? [92, 86, 78, 70, 62, 54, 46, 38, 30]
+        : [90, 80, 68, 56, 44]
   const funnelWithWidth = funnel.map((step, index) => ({
     ...step,
     widthPct: funnelVisualWidths[index] ?? 40,

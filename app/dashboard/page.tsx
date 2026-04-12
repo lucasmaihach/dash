@@ -571,7 +571,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   }
 
   if (needsAdLevelData && selectedPlatform === 'meta') {
-    let adRes = await dataClient
+    let adRes: any = await dataClient
       .from('meta_daily_ad_metrics')
       .select('date,campaign_name,project_tag,adset_name,ad_name,reach,impressions,amount_spent,link_clicks,landing_page_views,leads,view_forms,form_starts,form_submits,follows,reactions,comments_count,shares,saves,post_engagement')
       .eq('client_id', effectiveClientId)

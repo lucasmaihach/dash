@@ -493,6 +493,9 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
       const shouldShowCost =
         stageName === 'clicks' ||
         stageName.includes('link clicks') ||
+        stageName.includes('landing page views') ||
+        stageName.includes('leads rd') ||
+        stageName === 'mql' ||
         stageName.includes('view forms') ||
         stageName.includes('iniciou forms') ||
         stageName.includes('enviou forms') ||

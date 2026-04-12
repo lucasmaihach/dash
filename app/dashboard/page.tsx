@@ -116,6 +116,7 @@ type RdLeadRow = {
 
 const REPORT_TIMEZONE = process.env.REPORT_TIMEZONE || 'America/Sao_Paulo'
 const IOX_CLIENT_ID = 'd9cc196d-f8d6-4042-9da4-6fe93a31b215'
+const AGENCIA_CLIENT_ID = 'b8724c80-9c00-48ce-b9e4-245ba9a69a20'
 
 function dateKeyInTimezone(value: string | null | undefined, timezone: string): string {
   if (!value) return ''
@@ -252,15 +253,18 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
 
   const selectedPlatform: DashboardPlatform = params.platform === 'google' && hasGoogleAds ? 'google' : 'meta'
 
-  // Regra de negócio: somente IOX usa visão RD no funil/painel executivo.
-  // Mesmo que outro cliente tenha credencial RD ativa, o dashboard padrão deve permanecer.
+  // Regras de negócio por cliente:
+  // - IOX: visão RD
+  // - Agência: visão de funil de formulário
+  // - Demais: visão padrão
   const { data: rdCred } = await getSupabaseAdminClient()
     .from('client_rd_credentials')
     .select('client_id')
     .eq('client_id', effectiveClientId)
     .eq('is_active', true)
     .maybeSingle()
-  const hasRdIntegration = effectiveClientId === IOX_CLIENT_ID && !!rdCred
+  const useRdMode = effectiveClientId === IOX_CLIENT_ID && !!rdCred
+  const useAgencyFormMode = effectiveClientId === AGENCIA_CLIENT_ID
 
   const { data: baseRows, error: baseError } = selectedPlatform === 'google'
     ? await getCachedGoogleMetrics(effectiveClientId)
@@ -337,7 +341,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   // Leads qualificados vindos do RD Station (base local já ingerida em rd_leads_30d)
   let rdLeadsTableMissing = false
   let rdLeadsRows: RdLeadRow[] = []
-  if (hasRdIntegration) {
+  if (useRdMode) {
     const rdLeadsRes = await dataClient
       .from('rd_leads_30d')
       .select('created_at_rd,utm_campaign,is_mql_25k')
@@ -363,7 +367,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   const rdMqlCount = rdLeadsRows.filter((row) => row.is_mql_25k).length
   const costPerMql = rdMqlCount > 0 ? totals.amount_spent / rdMqlCount : 0
   const globalRdMqlRate = rdLeadsCount > 0 ? rdMqlCount / rdLeadsCount : 0
-  const realLeadsForFunnel = hasRdIntegration && !rdLeadsTableMissing ? rdLeadsCount : totals.leads
+  const realLeadsForFunnel = useRdMode && !rdLeadsTableMissing ? rdLeadsCount : totals.leads
 
   const rdLeadsByCampaign = new Map<string, number>()
   const rdMqlByCampaign = new Map<string, number>()
@@ -434,7 +438,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
         { stage: 'Clicks', value: totals.link_clicks, rate: totals.impressions > 0 ? totals.link_clicks / totals.impressions : 0 },
         { stage: 'Leads', value: totals.leads, rate: totals.link_clicks > 0 ? totals.leads / totals.link_clicks : 0 },
       ]
-    : hasRdIntegration
+    : useRdMode
       ? [
         { stage: 'Impressions', value: totals.impressions },
         { stage: 'Reach', value: totals.reach, rate: totals.impressions > 0 ? totals.reach / totals.impressions : 0 },
@@ -450,7 +454,8 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
         { stage: 'Leads RD', value: realLeadsForFunnel, rate: totals.landing_page_views > 0 ? realLeadsForFunnel / totals.landing_page_views : 0 },
         { stage: 'MQL', value: rdMqlCount, rate: realLeadsForFunnel > 0 ? rdMqlCount / realLeadsForFunnel : 0 },
       ]
-      : [
+      : useAgencyFormMode
+      ? [
         { stage: 'Impressions', value: totals.impressions },
         { stage: 'Reach', value: totals.reach, rate: totals.impressions > 0 ? totals.reach / totals.impressions : 0 },
         { stage: 'Link Clicks', value: totals.link_clicks, rate: totals.reach > 0 ? totals.link_clicks / totals.reach : 0 },
@@ -460,13 +465,24 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
         { stage: 'Landing Page Views', value: totals.landing_page_views, rate: totals.form_submits > 0 ? totals.landing_page_views / totals.form_submits : 0 },
         { stage: 'Leads', value: totals.leads, rate: totals.landing_page_views > 0 ? totals.leads / totals.landing_page_views : 0 },
       ]
+      : [
+        { stage: 'Impressions', value: totals.impressions },
+        { stage: 'Reach', value: totals.reach, rate: totals.impressions > 0 ? totals.reach / totals.impressions : 0 },
+        { stage: 'Link Clicks', value: totals.link_clicks, rate: totals.reach > 0 ? totals.link_clicks / totals.reach : 0 },
+        { stage: 'Landing Page Views', value: totals.landing_page_views, rate: totals.link_clicks > 0 ? totals.landing_page_views / totals.link_clicks : 0 },
+        { stage: 'Leads', value: totals.leads, rate: totals.landing_page_views > 0 ? totals.leads / totals.landing_page_views : 0 },
+      ]
 
   const totalFunnelRate = selectedPlatform === 'google'
     ? (totals.impressions > 0 ? totals.leads / totals.impressions : 0)
-    : hasRdIntegration
+    : useRdMode
       ? (totals.impressions > 0 ? rdMqlCount / totals.impressions : 0)
       : (totals.impressions > 0 ? totals.leads / totals.impressions : 0)
-  const funnelVisualWidths = selectedPlatform === 'google' ? [88, 64, 40] : [92, 86, 78, 70, 62, 54, 46, 38, 30]
+  const funnelVisualWidths = selectedPlatform === 'google'
+    ? [88, 64, 40]
+    : useRdMode || useAgencyFormMode
+      ? [92, 86, 78, 70, 62, 54, 46, 38, 30]
+      : [90, 80, 68, 56, 44]
   const funnelWithWidth = funnel.map((step, index) => ({
     ...step,
     widthPct: funnelVisualWidths[index] ?? 40,
@@ -954,15 +970,19 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                     <div className="metric"><div className="label">Impressões</div><div className="value">{fInt(totals.impressions)}</div></div>
                     <div className="metric"><div className="label">Frequência</div><div className="value">{fFloat(totals.frequency)}</div></div>
                     <div className="metric"><div className="label">Link Clicks</div><div className="value">{fInt(totals.link_clicks)}</div></div>
-                    <div className="metric"><div className="label">View Forms</div><div className="value">{fInt(totals.view_forms)}</div></div>
-                    <div className="metric"><div className="label">Custo / View Forms</div><div className="value">{totals.view_forms > 0 ? fMoney(totals.cost_per_view_form) : '—'}</div></div>
-                    <div className="metric"><div className="label">Iniciou Forms</div><div className="value">{fInt(totals.form_starts)}</div></div>
-                    <div className="metric"><div className="label">Custo / Iniciou Forms</div><div className="value">{totals.form_starts > 0 ? fMoney(totals.cost_per_form_start) : '—'}</div></div>
-                    <div className="metric"><div className="label">Enviou Forms</div><div className="value">{fInt(totals.form_submits)}</div></div>
-                    <div className="metric"><div className="label">Custo / Enviou Forms</div><div className="value">{totals.form_submits > 0 ? fMoney(totals.cost_per_form_submit) : '—'}</div></div>
+                    {useAgencyFormMode ? (
+                      <>
+                        <div className="metric"><div className="label">View Forms</div><div className="value">{fInt(totals.view_forms)}</div></div>
+                        <div className="metric"><div className="label">Custo / View Forms</div><div className="value">{totals.view_forms > 0 ? fMoney(totals.cost_per_view_form) : '—'}</div></div>
+                        <div className="metric"><div className="label">Iniciou Forms</div><div className="value">{fInt(totals.form_starts)}</div></div>
+                        <div className="metric"><div className="label">Custo / Iniciou Forms</div><div className="value">{totals.form_starts > 0 ? fMoney(totals.cost_per_form_start) : '—'}</div></div>
+                        <div className="metric"><div className="label">Enviou Forms</div><div className="value">{fInt(totals.form_submits)}</div></div>
+                        <div className="metric"><div className="label">Custo / Enviou Forms</div><div className="value">{totals.form_submits > 0 ? fMoney(totals.cost_per_form_submit) : '—'}</div></div>
+                      </>
+                    ) : null}
                     <div className="metric"><div className="label">Landing Page Views</div><div className="value">{fInt(totals.landing_page_views)}</div></div>
                     <div className="metric"><div className="label">Leads Gerenciador</div><div className="value">{fInt(totals.leads)}</div></div>
-                    {hasRdIntegration ? (
+                    {useRdMode ? (
                       <>
                         <div className="metric"><div className="label">Leads RD</div><div className="value">{rdLeadsTableMissing ? '—' : fInt(rdLeadsCount)}</div></div>
                         <div className="metric"><div className="label">MQL 25k (RD)</div><div className="value">{rdLeadsTableMissing ? '—' : fInt(rdMqlCount)}</div></div>
@@ -989,7 +1009,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
               </div>
             </section>
 
-            {hasRdIntegration && rdLeadsTableMissing ? (
+            {useRdMode && rdLeadsTableMissing ? (
               <section className="panel reveal d4">
                 <p className="error">
                   Tabela <code>rd_leads_30d</code> não encontrada. Execute o SQL em <code>docs/add_rd_leads_30d.sql</code>.

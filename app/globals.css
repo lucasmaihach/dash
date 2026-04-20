@@ -600,6 +600,37 @@ a {
   white-space: nowrap;
 }
 
+.ds-admin-client-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: 4px;
+  flex-wrap: wrap;
+}
+
+.ds-admin-client-switch-label {
+  color: var(--text-muted);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 600;
+}
+
+.ds-admin-client-switch select {
+  width: auto;
+  min-width: 240px;
+  max-width: 360px;
+  min-height: 36px;
+  padding: 7px 10px;
+  font-size: 12px;
+}
+
+.ds-admin-client-switch .button-secondary {
+  width: auto;
+  min-height: 36px;
+  padding: 8px 12px;
+}
+
 .filter-actions-row .button-secondary {
   width: 100%;
 }
@@ -1293,6 +1324,17 @@ tbody tr:hover {
     margin-left: 0;
     width: 100%;
     justify-content: flex-start;
+  }
+
+  .ds-admin-client-switch {
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .ds-admin-client-switch select {
+    min-width: 0;
+    flex: 1;
+    max-width: 100%;
   }
 
   .hero {

@@ -116,6 +116,12 @@ type RdLeadRow = {
   is_mql_25k: boolean
 }
 
+type AdminClientOption = {
+  id: string
+  name: string
+  status: string | null
+}
+
 const REPORT_TIMEZONE = process.env.REPORT_TIMEZONE || 'America/Sao_Paulo'
 const IOX_CLIENT_ID = 'd9cc196d-f8d6-4042-9da4-6fe93a31b215'
 const AGENCIA_CLIENT_ID = 'b8724c80-9c00-48ce-b9e4-245ba9a69a20'
@@ -243,6 +249,15 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
     .eq('id', effectiveClientId)
     .single()
   const viewingClientName = clientData?.name || null
+
+  let adminClientOptions: AdminClientOption[] = []
+  if (isAdminView) {
+    const { data: clientsData } = await getSupabaseAdminClient()
+      .from('clients')
+      .select('id,name,status')
+      .order('name', { ascending: true })
+    adminClientOptions = (clientsData || []) as AdminClientOption[]
+  }
 
   // Verifica se o cliente tem credenciais Google ativas
   const { data: googleCred } = await getSupabaseAdminClient()
@@ -799,6 +814,26 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
         ) : (
           <span className="ds-pill mono">{viewingClientName || effectiveClientId.slice(0, 8)}</span>
         )}
+        {isAdminView ? (
+          <form method="get" className="ds-admin-client-switch">
+            {params.platform && params.platform !== 'meta' ? <input type="hidden" name="platform" value={params.platform} /> : null}
+            {params.report ? <input type="hidden" name="report" value={params.report} /> : null}
+            {params.view ? <input type="hidden" name="view" value={params.view} /> : null}
+            {params.tag ? <input type="hidden" name="tag" value={params.tag} /> : null}
+            {params.campaign ? <input type="hidden" name="campaign" value={params.campaign} /> : null}
+            {params.start ? <input type="hidden" name="start" value={params.start} /> : null}
+            {params.end ? <input type="hidden" name="end" value={params.end} /> : null}
+            <label htmlFor="admin_client_switch" className="ds-admin-client-switch-label">Cliente</label>
+            <select id="admin_client_switch" name="as" defaultValue={effectiveClientId}>
+              {adminClientOptions.map((client) => (
+                <option key={client.id} value={client.id}>
+                  {client.name}{client.status && client.status !== 'active' ? ` (${client.status})` : ''}
+                </option>
+              ))}
+            </select>
+            <button type="submit" className="button-secondary">Ir</button>
+          </form>
+        ) : null}
         <div className="ds-nav-logout" style={{ display: 'flex', gap: 8 }}>
           {isAdminView ? (
             <a href="/admin" className="button-secondary" style={{ padding: '6px 14px', borderRadius: 8, fontSize: 12 }}>

@@ -250,8 +250,9 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
     .single()
   const viewingClientName = clientData?.name || null
 
+  const isAdminUser = profile.role === 'admin'
   let adminClientOptions: AdminClientOption[] = []
-  if (isAdminView) {
+  if (isAdminUser) {
     const { data: clientsData } = await getSupabaseAdminClient()
       .from('clients')
       .select('id,name,status')
@@ -814,7 +815,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
         ) : (
           <span className="ds-pill mono">{viewingClientName || effectiveClientId.slice(0, 8)}</span>
         )}
-        {isAdminView ? (
+        {isAdminUser ? (
           <form method="get" className="ds-admin-client-switch">
             {params.platform && params.platform !== 'meta' ? <input type="hidden" name="platform" value={params.platform} /> : null}
             {params.report ? <input type="hidden" name="report" value={params.report} /> : null}

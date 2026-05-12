@@ -9,6 +9,7 @@ create table if not exists public.meta_ad_creatives (
   adset_id text,
   adset_name text,
   creative_id text,
+  image_hash text,
   image_url text,
   thumbnail_url text,
   video_url text,
@@ -31,7 +32,8 @@ create index if not exists idx_ad_creatives_client_ad_id
 
 -- Compatibilidade para bases já existentes
 alter table public.meta_ad_creatives
-  add column if not exists ad_snapshot_url text;
+  add column if not exists ad_snapshot_url text,
+  add column if not exists image_hash text;
 
 -- Auto updated_at trigger
 drop trigger if exists trg_ad_creatives_set_updated_at on public.meta_ad_creatives;

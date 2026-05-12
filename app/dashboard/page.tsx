@@ -115,6 +115,7 @@ type AdCreativeRow = {
   ad_id: string
   ad_name: string | null
   creative_id: string | null
+  image_hash: string | null
   creative_type: string | null
   thumbnail_url: string | null
   video_id: string | null
@@ -210,18 +211,14 @@ function normalizeMediaUrl(value: string | null | undefined): string {
   return value.split('?')[0] || value
 }
 
-function creativeGroupKey(row: AdCreativeRow, useMessageMode: boolean): string {
-  if (useMessageMode) {
-    if (row.video_id) return `video:${row.video_id}`
-    const mediaPath = normalizeMediaUrl(row.thumbnail_url || row.link_url || '')
-    if (mediaPath) return `media:${mediaPath}`
-    const normalizedName = normalizeEntityKey(row.ad_name)
-    if (normalizedName) return `adname:${normalizedName}`
-  }
-  if (row.creative_id) return `creative:${row.creative_id}`
+function creativeGroupKey(row: AdCreativeRow): string {
   if (row.video_id) return `video:${row.video_id}`
+  if (row.image_hash) return `image_hash:${row.image_hash}`
+  if (row.creative_id) return `creative:${row.creative_id}`
   if (row.thumbnail_url) return `thumb:${normalizeMediaUrl(row.thumbnail_url)}`
   if (row.link_url) return `link:${normalizeMediaUrl(row.link_url)}`
+  const normalizedName = normalizeEntityKey(row.ad_name)
+  if (normalizedName) return `adname:${normalizedName}`
   return `ad:${row.ad_id}`
 }
 
@@ -746,10 +743,17 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
 
     // Criativos: busca thumbnails + métricas agregadas por ad_id
     if (selectedView === 'creatives') {
-      const creativesRes = await dataClient
+      let creativesRes: any = await dataClient
         .from('meta_ad_creatives')
-        .select('ad_id,ad_name,creative_id,creative_type,thumbnail_url,video_id,link_url,ad_snapshot_url,call_to_action_type')
+        .select('ad_id,ad_name,creative_id,image_hash,creative_type,thumbnail_url,video_id,link_url,ad_snapshot_url,call_to_action_type')
         .eq('client_id', effectiveClientId)
+
+      if (creativesRes.error?.code === '42703') {
+        creativesRes = await dataClient
+          .from('meta_ad_creatives')
+          .select('ad_id,ad_name,creative_id,creative_type,thumbnail_url,video_id,link_url,ad_snapshot_url,call_to_action_type')
+          .eq('client_id', effectiveClientId)
+      }
 
       // 42P01 = tabela não existe | 42703 = coluna não existe (creative_type ausente)
       creativesTableMissing = ['42P01', '42703'].includes(creativesRes.error?.code ?? '')
@@ -763,7 +767,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
 
         const groupedCreatives = new Map<string, { base: AdCreativeRow; adNames: Set<string> }>()
         for (const row of creativesRes.data as AdCreativeRow[]) {
-          const key = creativeGroupKey(row, useMessageMetricsMode)
+          const key = creativeGroupKey(row)
           if (!groupedCreatives.has(key)) {
             groupedCreatives.set(key, { base: row, adNames: new Set() })
           }
@@ -813,7 +817,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
             const primaryName = g.base.ad_name || '(sem nome)'
 
             return {
-              ad_id: creativeGroupKey(g.base, useMessageMetricsMode),
+              ad_id: creativeGroupKey(g.base),
               ad_name: primaryName,
               creative_type: (g.base.creative_type ?? 'unknown') as CreativeCard['creative_type'],
               thumbnail_url: g.base.thumbnail_url,

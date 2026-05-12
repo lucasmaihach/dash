@@ -373,6 +373,25 @@ async function supabaseUpsert(table, rows, onConflict) {
   // Compatibilidade com ambientes em que meta_ad_creatives ainda não possui ad_snapshot_url.
   if (
     table === 'meta_ad_creatives' &&
+    errorText.includes("Could not find the 'image_hash' column")
+  ) {
+    const rowsWithoutImageHash = rows.map(({ image_hash, ...rest }) => rest)
+    const retry = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(rowsWithoutImageHash)
+    })
+
+    if (retry.ok) {
+      console.warn('meta_ad_creatives: fallback sem image_hash aplicado com sucesso')
+      return
+    }
+
+    throw new Error(`Supabase UPSERT failed (${retry.status}) after fallback: ${await retry.text()}`)
+  }
+
+  if (
+    table === 'meta_ad_creatives' &&
     errorText.includes("Could not find the 'ad_snapshot_url' column")
   ) {
     const rowsWithoutSnapshot = rows.map(({ ad_snapshot_url, ...rest }) => rest)
@@ -402,7 +421,7 @@ async function fetchAdsWithCreatives(accessToken, adAccountId) {
     'adset_id',
     'campaign_id',
     'ad_snapshot_url',
-    'creative.fields(id,thumbnail_url,image_url,video_id,link_url,call_to_action{type})',
+    'creative.fields(id,thumbnail_url,image_url,image_hash,video_id,link_url,call_to_action{type})',
   ].join(',')
 
   const params = new URLSearchParams({
@@ -476,6 +495,7 @@ function buildCreativeRow(clientId, ad) {
     campaign_id: ad.campaign_id || null,
     adset_id: ad.adset_id || null,
     creative_id: creative.id || null,
+    image_hash: creative.image_hash || null,
     thumbnail_url: creative.thumbnail_url || creative.image_url || null,
     image_url: creative.image_url || null,
     video_id: creative.video_id || null,

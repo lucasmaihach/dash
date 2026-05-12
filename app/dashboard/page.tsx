@@ -214,9 +214,9 @@ function normalizeMediaUrl(value: string | null | undefined): string {
 function creativeGroupKey(row: AdCreativeRow): string {
   if (row.video_id) return `video:${row.video_id}`
   if (row.image_hash) return `image_hash:${row.image_hash}`
-  if (row.creative_id) return `creative:${row.creative_id}`
   if (row.thumbnail_url) return `thumb:${normalizeMediaUrl(row.thumbnail_url)}`
   if (row.link_url) return `link:${normalizeMediaUrl(row.link_url)}`
+  if (row.creative_id) return `creative:${row.creative_id}`
   const normalizedName = normalizeEntityKey(row.ad_name)
   if (normalizedName) return `adname:${normalizedName}`
   return `ad:${row.ad_id}`

@@ -396,7 +396,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
 
   const totals = consolidate(filtered)
   const useMessageMetricsMode =
-    selectedPlatform === 'meta' && (useMessageCampaignMode || totals.messages > 0)
+    selectedPlatform === 'meta' && useMessageCampaignMode
   const byDayRows = byDay(filtered)
   const campaignRows = byCampaign(filtered)
 

@@ -283,6 +283,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
     .maybeSingle()
   const useRdMode = effectiveClientId === IOX_CLIENT_ID && !!rdCred
   const useAgencyFormMode = effectiveClientId === AGENCIA_CLIENT_ID
+  const useMessageCampaignMode = /vandre/i.test(viewingClientName || '')
   const agencyLeadLabel = 'Reuniões Agendadas'
 
   const { data: baseRows, error: baseError } = selectedPlatform === 'google'
@@ -484,8 +485,12 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
         { stage: 'Impressions', value: totals.impressions },
         { stage: 'Reach', value: totals.reach, rate: totals.impressions > 0 ? totals.reach / totals.impressions : 0 },
         { stage: 'Link Clicks', value: totals.link_clicks, rate: totals.reach > 0 ? totals.link_clicks / totals.reach : 0 },
-        { stage: 'Landing Page Views', value: totals.landing_page_views, rate: totals.link_clicks > 0 ? totals.landing_page_views / totals.link_clicks : 0 },
-        { stage: 'Leads', value: totals.leads, rate: totals.landing_page_views > 0 ? totals.leads / totals.landing_page_views : 0 },
+        ...(useMessageCampaignMode
+          ? [{ stage: 'Mensagens', value: totals.leads, rate: totals.link_clicks > 0 ? totals.leads / totals.link_clicks : 0 }]
+          : [
+              { stage: 'Landing Page Views', value: totals.landing_page_views, rate: totals.link_clicks > 0 ? totals.landing_page_views / totals.link_clicks : 0 },
+              { stage: 'Leads', value: totals.leads, rate: totals.landing_page_views > 0 ? totals.leads / totals.landing_page_views : 0 },
+            ]),
       ]
 
   const totalFunnelRate = selectedPlatform === 'google'
@@ -499,7 +504,9 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
       ? [90, 80, 68, 56, 44, 34]
       : useAgencyFormMode
         ? [92, 84, 74, 64, 54, 44, 36]
-        : [90, 80, 68, 56, 44]
+        : useMessageCampaignMode
+          ? [90, 80, 68, 56]
+          : [90, 80, 68, 56, 44]
   const funnelWithWidth = funnel.map((step, index) => ({
     ...step,
     widthPct: funnelVisualWidths[index] ?? 40,
@@ -516,7 +523,8 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
         stageName.includes('iniciou forms') ||
         stageName.includes('enviou forms') ||
         stageName.includes('reuniões agendadas') ||
-        stageName.includes('invitee_meeting_scheduled')
+        stageName.includes('invitee_meeting_scheduled') ||
+        stageName.includes('mensagens')
       return shouldShowCost && step.value > 0 ? totals.amount_spent / step.value : null
     })()
   }))
@@ -1034,6 +1042,12 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                     ) : null}
                     <div className="metric"><div className="label">Landing Page Views</div><div className="value">{fInt(totals.landing_page_views)}</div></div>
                     <div className="metric"><div className="label">{useAgencyFormMode ? agencyLeadLabel : 'Leads Gerenciador'}</div><div className="value">{fInt(totals.leads)}</div></div>
+                    {useMessageCampaignMode ? (
+                      <>
+                        <div className="metric"><div className="label">Mensagens</div><div className="value">{fInt(totals.leads)}</div></div>
+                        <div className="metric"><div className="label">Custo por Mensagem</div><div className="value">{totals.leads > 0 ? fMoney(totals.amount_spent / totals.leads) : '—'}</div></div>
+                      </>
+                    ) : null}
                     {useRdMode ? (
                       <>
                         <div className="metric"><div className="label">Leads RD</div><div className="value">{rdLeadsTableMissing ? '—' : fInt(rdLeadsCount)}</div></div>

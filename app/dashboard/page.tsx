@@ -322,8 +322,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
     .maybeSingle()
   const useRdMode = effectiveClientId === IOX_CLIENT_ID && !!rdCred
   const useAgencyFormMode = effectiveClientId === AGENCIA_CLIENT_ID
-  const useMessageCampaignMode =
-    effectiveClientId === VANDRE_CLIENT_ID || normalizeText(viewingClientName).includes('vandre')
+  const useMessageCampaignMode = effectiveClientId === VANDRE_CLIENT_ID
   const agencyLeadLabel = 'Reuniões Agendadas'
 
   const { data: baseRows, error: baseError } = selectedPlatform === 'google'

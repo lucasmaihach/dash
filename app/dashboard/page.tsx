@@ -222,6 +222,14 @@ function creativeGroupKey(row: AdCreativeRow): string {
   return `ad:${row.ad_id}`
 }
 
+function normalizeCreativeNameKey(value: string | null | undefined): string {
+  return normalizeText(value)
+    .replace(/[\[\]\(\)\-_.]/g, ' ')
+    .replace(/\b(video|vid|imagem|img|copia|copy)\b/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
 function tokenScore(a: string, b: string): number {
   const ta = new Set(a.split(/[^a-z0-9]+/g).filter(Boolean))
   const tb = new Set(b.split(/[^a-z0-9]+/g).filter(Boolean))
@@ -773,7 +781,25 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
           if (row.ad_name && row.ad_name.trim()) groupedCreatives.get(key)!.adNames.add(row.ad_name.trim())
         }
 
-        creativeCards = Array.from(groupedCreatives.values())
+        const creativeGroups =
+          effectiveClientId === IOX_CLIENT_ID
+            ? (() => {
+                const byName = new Map<string, { base: AdCreativeRow; adNames: Set<string> }>()
+                for (const group of groupedCreatives.values()) {
+                  const nameKey = normalizeCreativeNameKey(group.base.ad_name)
+                  const mergeKey = nameKey || creativeGroupKey(group.base)
+                  if (!byName.has(mergeKey)) {
+                    byName.set(mergeKey, { base: group.base, adNames: new Set(group.adNames) })
+                    continue
+                  }
+                  const existing = byName.get(mergeKey)!
+                  for (const n of group.adNames) existing.adNames.add(n)
+                }
+                return Array.from(byName.values())
+              })()
+            : Array.from(groupedCreatives.values())
+
+        creativeCards = creativeGroups
           .map((g) => {
             const metricRows: MetricRow[] = []
             let estMql = 0

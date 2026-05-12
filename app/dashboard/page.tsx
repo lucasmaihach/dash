@@ -179,6 +179,14 @@ function normalizeCampaignKey(value: string | null | undefined): string {
     .replace(/\s+/g, ' ')
 }
 
+function normalizeText(value: string | null | undefined): string {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+    .toLowerCase()
+}
+
 function campaignSlug(value: string | null | undefined): string {
   return normalizeCampaignKey(value).replace(/[^a-z0-9]+/g, '')
 }
@@ -283,7 +291,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
     .maybeSingle()
   const useRdMode = effectiveClientId === IOX_CLIENT_ID && !!rdCred
   const useAgencyFormMode = effectiveClientId === AGENCIA_CLIENT_ID
-  const useMessageCampaignMode = /vandre/i.test(viewingClientName || '')
+  const useMessageCampaignMode = normalizeText(viewingClientName).includes('vandre')
   const agencyLeadLabel = 'Reuniões Agendadas'
 
   const { data: baseRows, error: baseError } = selectedPlatform === 'google'

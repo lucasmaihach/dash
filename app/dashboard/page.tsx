@@ -111,6 +111,18 @@ type AdCreativeLinkRow = {
   link_url: string | null
 }
 
+type AdCreativeRow = {
+  ad_id: string
+  ad_name: string | null
+  creative_id: string | null
+  creative_type: string | null
+  thumbnail_url: string | null
+  video_id: string | null
+  link_url: string | null
+  ad_snapshot_url: string | null
+  call_to_action_type: string | null
+}
+
 type RdLeadRow = {
   created_at_rd: string | null
   utm_campaign: string | null
@@ -191,6 +203,14 @@ function normalizeText(value: string | null | undefined): string {
 
 function campaignSlug(value: string | null | undefined): string {
   return normalizeCampaignKey(value).replace(/[^a-z0-9]+/g, '')
+}
+
+function creativeGroupKey(row: AdCreativeRow): string {
+  if (row.creative_id) return `creative:${row.creative_id}`
+  if (row.video_id) return `video:${row.video_id}`
+  if (row.thumbnail_url) return `thumb:${row.thumbnail_url}`
+  if (row.link_url) return `link:${row.link_url}`
+  return `ad:${row.ad_id}`
 }
 
 function tokenScore(a: string, b: string): number {
@@ -716,7 +736,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
     if (selectedView === 'creatives') {
       const creativesRes = await dataClient
         .from('meta_ad_creatives')
-        .select('ad_id,ad_name,creative_type,thumbnail_url,video_id,link_url,ad_snapshot_url,call_to_action_type')
+        .select('ad_id,ad_name,creative_id,creative_type,thumbnail_url,video_id,link_url,ad_snapshot_url,call_to_action_type')
         .eq('client_id', effectiveClientId)
 
       // 42P01 = tabela não existe | 42703 = coluna não existe (creative_type ausente)
@@ -729,30 +749,74 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
           metricsByAdName.set(entry.name, entry.totals)
         }
 
-        creativeCards = creativesRes.data
-          .map((c) => {
-            const adName = c.ad_name ?? ''
-            const m = metricsByAdName.get(adName)
-            const mqlTotals = adMqlTotalsByName.get(normalizeEntityKey(adName))
-            const estMql = mqlTotals?.estimatedMql || 0
-            const cpmql = estMql > 0 ? (mqlTotals?.amountSpent || 0) / estMql : 0
+        const groupedCreatives = new Map<string, { base: AdCreativeRow; adNames: Set<string> }>()
+        for (const row of creativesRes.data as AdCreativeRow[]) {
+          const key = creativeGroupKey(row)
+          if (!groupedCreatives.has(key)) {
+            groupedCreatives.set(key, { base: row, adNames: new Set() })
+          }
+          if (row.ad_name && row.ad_name.trim()) groupedCreatives.get(key)!.adNames.add(row.ad_name.trim())
+        }
+
+        creativeCards = Array.from(groupedCreatives.values())
+          .map((g) => {
+            const metricRows: MetricRow[] = []
+            let estMql = 0
+            let estMqlSpent = 0
+
+            for (const adName of g.adNames) {
+              const totalsByAd = metricsByAdName.get(adName)
+              if (!totalsByAd) continue
+              metricRows.push({
+                date: '',
+                campaign_name: '',
+                project_tag: '',
+                daily_budget: 0,
+                reach: totalsByAd.reach,
+                impressions: totalsByAd.impressions,
+                amount_spent: totalsByAd.amount_spent,
+                link_clicks: totalsByAd.link_clicks,
+                landing_page_views: totalsByAd.landing_page_views,
+                leads: totalsByAd.leads,
+                messages: totalsByAd.messages,
+                view_forms: totalsByAd.view_forms,
+                form_starts: totalsByAd.form_starts,
+                form_submits: totalsByAd.form_submits,
+                follows: totalsByAd.follows,
+                reactions: totalsByAd.reactions,
+                comments_count: totalsByAd.comments_count,
+                shares: totalsByAd.shares,
+                saves: totalsByAd.saves,
+                post_engagement: totalsByAd.post_engagement,
+              })
+              const mqlTotals = adMqlTotalsByName.get(normalizeEntityKey(adName))
+              if (mqlTotals) {
+                estMql += mqlTotals.estimatedMql
+                estMqlSpent += mqlTotals.amountSpent
+              }
+            }
+
+            const merged = metricRows.length > 0 ? consolidate(metricRows) : null
+            const cpmql = estMql > 0 ? estMqlSpent / estMql : 0
+            const primaryName = g.base.ad_name || '(sem nome)'
+
             return {
-              ad_id: c.ad_id,
-              ad_name: c.ad_name,
-              creative_type: (c.creative_type ?? 'unknown') as CreativeCard['creative_type'],
-              thumbnail_url: c.thumbnail_url,
-              video_id: c.video_id,
-              link_url: c.link_url,
-              ad_snapshot_url: c.ad_snapshot_url ?? null,
-              call_to_action_type: c.call_to_action_type,
-              amount_spent: m ? fMoney(m.amount_spent) : '—',
-              leads: m ? fInt(useMessageMetricsMode ? m.messages : m.leads) : '—',
+              ad_id: creativeGroupKey(g.base),
+              ad_name: primaryName,
+              creative_type: (g.base.creative_type ?? 'unknown') as CreativeCard['creative_type'],
+              thumbnail_url: g.base.thumbnail_url,
+              video_id: g.base.video_id,
+              link_url: g.base.link_url,
+              ad_snapshot_url: g.base.ad_snapshot_url ?? null,
+              call_to_action_type: g.base.call_to_action_type,
+              amount_spent: merged ? fMoney(merged.amount_spent) : '—',
+              leads: merged ? fInt(useMessageMetricsMode ? merged.messages : merged.leads) : '—',
               mql: estMql > 0 ? fInt(Math.round(estMql)) : '—',
               cpmql: estMql > 0 ? fMoney(cpmql) : '—',
-              cpl: m ? fMoney(m.cpl) : '—',
-              impressions: m ? fInt(m.impressions) : '—',
-              ctr: m ? fPct(m.ctr) : '—',
-              cpc: m ? fMoney(m.cpc) : '—',
+              cpl: merged ? fMoney(merged.cpl) : '—',
+              impressions: merged ? fInt(merged.impressions) : '—',
+              ctr: merged ? fPct(merged.ctr) : '—',
+              cpc: merged ? fMoney(merged.cpc) : '—',
             } satisfies CreativeCard
           })
           // Ordena: ads com métricas primeiro, depois por métrica principal desc

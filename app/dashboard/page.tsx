@@ -1193,11 +1193,18 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                       { key: 'impressions', label: 'Impressions' },
                     { key: 'link_clicks', label: 'Link Clicks' },
                     { key: 'landing_page_views', label: 'Landing Page Views' },
-                    { key: 'leads', label: useAgencyFormMode ? agencyLeadLabel : 'Leads' },
-                    { key: 'mql', label: 'MQL' },
-                    { key: 'cpmql', label: 'Custo/MQL' },
+                    ...(useMessageCampaignMode
+                      ? [
+                          { key: 'messages', label: 'Mensagens' },
+                          { key: 'cpmessage', label: 'Custo/Mensagem' },
+                        ]
+                      : [
+                          { key: 'leads', label: useAgencyFormMode ? agencyLeadLabel : 'Leads' },
+                          { key: 'mql', label: 'MQL' },
+                          { key: 'cpmql', label: 'Custo/MQL' },
+                        ]),
                     { key: 'cpc', label: 'CPC' },
-                    { key: 'cpl', label: 'CPL' },
+                    ...(useMessageCampaignMode ? [] : [{ key: 'cpl', label: 'CPL' }]),
                     { key: 'ctr', label: 'CTR' },
                     { key: 'cpm', label: 'CPM' },
                     { key: 'connect_rate', label: 'Connect Rate' },
@@ -1215,6 +1222,8 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                         impressions: fInt(row.totals.impressions),
                         link_clicks: fInt(row.totals.link_clicks),
                         landing_page_views: fInt(row.totals.landing_page_views),
+                        messages: fInt(row.totals.messages),
+                        cpmessage: row.totals.messages > 0 ? fMoney(row.totals.cost_per_message) : '—',
                         leads: fInt(row.totals.leads),
                         mql: mql > 0 ? fInt(mql) : '—',
                         cpmql: mql > 0 ? fMoney(cpmql) : '—',
@@ -1225,7 +1234,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                         connect_rate: fPct(row.totals.connect_rate),
                       }
                     }),
-                    ...(unattributedMqlCount > 0
+                    ...(!useMessageCampaignMode && unattributedMqlCount > 0
                       ? [{
                           name: '(MQL sem campanha atribuída)',
                           amount_spent: '—',
@@ -1328,11 +1337,18 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                     { key: 'impressions', label: 'Impressions' },
                     { key: 'link_clicks', label: 'Link Clicks' },
                     { key: 'landing_page_views', label: 'Landing Page Views' },
-                    { key: 'leads', label: useAgencyFormMode ? agencyLeadLabel : 'Leads' },
-                    { key: 'mql', label: 'MQL (est.)' },
-                    { key: 'cpmql', label: 'Custo/MQL (est.)' },
+                    ...(useMessageCampaignMode
+                      ? [
+                          { key: 'messages', label: 'Mensagens' },
+                          { key: 'cpmessage', label: 'Custo/Mensagem' },
+                        ]
+                      : [
+                          { key: 'leads', label: useAgencyFormMode ? agencyLeadLabel : 'Leads' },
+                          { key: 'mql', label: 'MQL (est.)' },
+                          { key: 'cpmql', label: 'Custo/MQL (est.)' },
+                        ]),
                     { key: 'cpc', label: 'CPC' },
-                    { key: 'cpl', label: 'CPL' },
+                    ...(useMessageCampaignMode ? [] : [{ key: 'cpl', label: 'CPL' }]),
                     { key: 'ctr', label: 'CTR' },
                     { key: 'cpm', label: 'CPM' },
                     { key: 'connect_rate', label: 'Connect Rate' },
@@ -1349,6 +1365,8 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                       impressions: fInt(row.totals.impressions),
                       link_clicks: fInt(row.totals.link_clicks),
                       landing_page_views: fInt(row.totals.landing_page_views),
+                      messages: fInt(row.totals.messages),
+                      cpmessage: row.totals.messages > 0 ? fMoney(row.totals.cost_per_message) : '—',
                       leads: fInt(row.totals.leads),
                       mql: estMql > 0 ? fInt(Math.round(estMql)) : '—',
                       cpmql: estMql > 0 ? fMoney(cpmql) : '—',
@@ -1428,11 +1446,18 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                     { key: 'impressions', label: 'Impressions' },
                     { key: 'link_clicks', label: 'Link Clicks' },
                     { key: 'landing_page_views', label: 'Landing Page Views' },
-                    { key: 'leads', label: 'Leads' },
-                    { key: 'mql', label: 'MQL (est.)' },
-                    { key: 'cpmql', label: 'Custo/MQL (est.)' },
+                    ...(useMessageCampaignMode
+                      ? [
+                          { key: 'messages', label: 'Mensagens' },
+                          { key: 'cpmessage', label: 'Custo/Mensagem' },
+                        ]
+                      : [
+                          { key: 'leads', label: 'Leads' },
+                          { key: 'mql', label: 'MQL (est.)' },
+                          { key: 'cpmql', label: 'Custo/MQL (est.)' },
+                        ]),
                     { key: 'cpc', label: 'CPC' },
-                    { key: 'cpl', label: 'CPL' },
+                    ...(useMessageCampaignMode ? [] : [{ key: 'cpl', label: 'CPL' }]),
                     { key: 'ctr', label: 'CTR' },
                     { key: 'cpm', label: 'CPM' },
                     { key: 'connect_rate', label: 'Connect Rate' },
@@ -1448,6 +1473,8 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                       impressions: fInt(row.totals.impressions),
                       link_clicks: fInt(row.totals.link_clicks),
                       landing_page_views: fInt(row.totals.landing_page_views),
+                      messages: fInt(row.totals.messages),
+                      cpmessage: row.totals.messages > 0 ? fMoney(row.totals.cost_per_message) : '—',
                       leads: fInt(row.totals.leads),
                       mql: estMql > 0 ? fInt(Math.round(estMql)) : '—',
                       cpmql: estMql > 0 ? fMoney(cpmql) : '—',

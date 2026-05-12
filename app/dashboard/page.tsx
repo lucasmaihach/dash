@@ -205,11 +205,20 @@ function campaignSlug(value: string | null | undefined): string {
   return normalizeCampaignKey(value).replace(/[^a-z0-9]+/g, '')
 }
 
-function creativeGroupKey(row: AdCreativeRow): string {
+function normalizeMediaUrl(value: string | null | undefined): string {
+  if (!value) return ''
+  return value.split('?')[0] || value
+}
+
+function creativeGroupKey(row: AdCreativeRow, useMessageMode: boolean): string {
+  if (useMessageMode) {
+    const normalizedName = normalizeEntityKey(row.ad_name)
+    if (normalizedName) return `adname:${normalizedName}`
+  }
   if (row.creative_id) return `creative:${row.creative_id}`
   if (row.video_id) return `video:${row.video_id}`
-  if (row.thumbnail_url) return `thumb:${row.thumbnail_url}`
-  if (row.link_url) return `link:${row.link_url}`
+  if (row.thumbnail_url) return `thumb:${normalizeMediaUrl(row.thumbnail_url)}`
+  if (row.link_url) return `link:${normalizeMediaUrl(row.link_url)}`
   return `ad:${row.ad_id}`
 }
 
@@ -751,7 +760,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
 
         const groupedCreatives = new Map<string, { base: AdCreativeRow; adNames: Set<string> }>()
         for (const row of creativesRes.data as AdCreativeRow[]) {
-          const key = creativeGroupKey(row)
+          const key = creativeGroupKey(row, useMessageMetricsMode)
           if (!groupedCreatives.has(key)) {
             groupedCreatives.set(key, { base: row, adNames: new Set() })
           }
@@ -801,7 +810,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
             const primaryName = g.base.ad_name || '(sem nome)'
 
             return {
-              ad_id: creativeGroupKey(g.base),
+              ad_id: creativeGroupKey(g.base, useMessageMetricsMode),
               ad_name: primaryName,
               creative_type: (g.base.creative_type ?? 'unknown') as CreativeCard['creative_type'],
               thumbnail_url: g.base.thumbnail_url,

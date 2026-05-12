@@ -24,6 +24,7 @@ export type CreativeCard = {
 
 type Props = {
   cards: CreativeCard[]
+  primaryMetricLabel?: string
 }
 
 const TYPE_LABEL: Record<string, string> = {
@@ -32,7 +33,7 @@ const TYPE_LABEL: Record<string, string> = {
   unknown: '📄 Criativo',
 }
 
-export function AdCreativesGrid({ cards }: Props) {
+export function AdCreativesGrid({ cards, primaryMetricLabel = 'Leads' }: Props) {
   const [expanded, setExpanded] = useState<string | null>(null)
 
   if (cards.length === 0) {
@@ -89,7 +90,7 @@ export function AdCreativesGrid({ cards }: Props) {
             {/* Métricas principais sempre visíveis */}
             <div className="creative-metrics-row">
               <div className="creative-metric">
-                <span className="creative-metric-label">Leads</span>
+                <span className="creative-metric-label">{primaryMetricLabel}</span>
                 <span className="creative-metric-value">{card.leads}</span>
               </div>
               <div className="creative-metric">

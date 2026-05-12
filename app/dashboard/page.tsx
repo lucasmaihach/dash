@@ -746,7 +746,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
               ad_snapshot_url: c.ad_snapshot_url ?? null,
               call_to_action_type: c.call_to_action_type,
               amount_spent: m ? fMoney(m.amount_spent) : '—',
-              leads: m ? fInt(m.leads) : '—',
+              leads: m ? fInt(useMessageMetricsMode ? m.messages : m.leads) : '—',
               mql: estMql > 0 ? fInt(Math.round(estMql)) : '—',
               cpmql: estMql > 0 ? fMoney(cpmql) : '—',
               cpl: m ? fMoney(m.cpl) : '—',
@@ -755,7 +755,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
               cpc: m ? fMoney(m.cpc) : '—',
             } satisfies CreativeCard
           })
-          // Ordena: ads com métricas primeiro, depois por leads desc
+          // Ordena: ads com métricas primeiro, depois por métrica principal desc
           .sort((a, b) => {
             const aLeads = a.leads === '—' ? -1 : parseInt(a.leads.replace(/\D/g, '')) || 0
             const bLeads = b.leads === '—' ? -1 : parseInt(b.leads.replace(/\D/g, '')) || 0
@@ -1501,7 +1501,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
           <section className="panel reveal d4">
             <h2>Criativos</h2>
             <p style={{ color: 'var(--text-muted)', fontSize: 12, marginBottom: 16 }}>
-              Thumbnails e métricas dos anúncios com imagem ou vídeo. Ordenado por Leads.
+              Thumbnails e métricas dos anúncios com imagem ou vídeo. Ordenado por {useMessageMetricsMode ? 'Mensagens' : 'Leads'}.
             </p>
             {creativesTableMissing ? (
               <p className="error">
@@ -1509,7 +1509,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                 Execute o SQL em <code>docs/add_ad_creatives.sql</code> no Supabase.
               </p>
             ) : (
-              <AdCreativesGrid cards={creativeCards} />
+              <AdCreativesGrid cards={creativeCards} primaryMetricLabel={useMessageMetricsMode ? 'Mensagens' : 'Leads'} />
             )}
           </section>
         ) : null}

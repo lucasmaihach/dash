@@ -9,6 +9,7 @@ export type MetricRow = {
   link_clicks: number
   landing_page_views: number
   leads: number
+  messages?: number
   view_forms?: number
   form_starts?: number
   form_submits?: number
@@ -28,6 +29,7 @@ export type Totals = {
   link_clicks: number
   landing_page_views: number
   leads: number
+  messages: number
   view_forms: number
   form_starts: number
   form_submits: number
@@ -40,6 +42,7 @@ export type Totals = {
   ctr: number
   connect_rate: number
   cost_per_lpv: number
+  cost_per_message: number
   follows: number
   reactions: number
   comments_count: number
@@ -60,6 +63,7 @@ export function consolidate(rows: MetricRow[]): Totals {
   const link_clicks = rows.reduce((acc, r) => acc + (r.link_clicks || 0), 0)
   const landing_page_views = rows.reduce((acc, r) => acc + (r.landing_page_views || 0), 0)
   const leads = rows.reduce((acc, r) => acc + (r.leads || 0), 0)
+  const messages = rows.reduce((acc, r) => acc + (r.messages || 0), 0)
   const view_forms = rows.reduce((acc, r) => acc + (r.view_forms || 0), 0)
   const form_starts = rows.reduce((acc, r) => acc + (r.form_starts || 0), 0)
   const form_submits = rows.reduce((acc, r) => acc + (r.form_submits || 0), 0)
@@ -78,6 +82,7 @@ export function consolidate(rows: MetricRow[]): Totals {
     link_clicks,
     landing_page_views,
     leads,
+    messages,
     view_forms,
     form_starts,
     form_submits,
@@ -90,6 +95,7 @@ export function consolidate(rows: MetricRow[]): Totals {
     ctr: safeDiv(link_clicks, impressions),
     connect_rate: safeDiv(landing_page_views, link_clicks),
     cost_per_lpv: safeDiv(amount_spent, landing_page_views),
+    cost_per_message: safeDiv(amount_spent, messages),
     follows,
     reactions,
     comments_count,

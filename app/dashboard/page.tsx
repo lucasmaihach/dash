@@ -21,7 +21,7 @@ function getCachedMetrics(clientId: string) {
       const admin = getSupabaseAdminClient()
       const { data, error } = await admin
         .from('meta_daily_campaign_metrics')
-        .select('date,campaign_name,project_tag,daily_budget,reach,impressions,amount_spent,link_clicks,landing_page_views,leads,view_forms,form_starts,form_submits,follows,reactions,comments_count,shares,saves,post_engagement')
+        .select('date,campaign_name,project_tag,daily_budget,reach,impressions,amount_spent,link_clicks,landing_page_views,leads,messages,view_forms,form_starts,form_submits,follows,reactions,comments_count,shares,saves,post_engagement')
         .eq('client_id', clientId)
         .order('date', { ascending: false })
 
@@ -60,6 +60,7 @@ function getCachedGoogleMetrics(clientId: string) {
         link_clicks: r.clicks ?? 0,
         landing_page_views: 0,
         leads: r.leads ?? 0,
+        messages: 0,
         view_forms: 0,
         form_starts: 0,
         form_submits: 0,
@@ -460,6 +461,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   const attributedMqlCount = Array.from(campaignMqlByName.values()).reduce((acc, n) => acc + n, 0)
   const unattributedMqlCount = Math.max(0, rdMqlCount - attributedMqlCount)
 
+  const messagesForFunnel = useMessageCampaignMode ? totals.messages : 0
   const funnel = selectedPlatform === 'google'
     ? [
         { stage: 'Impressions', value: totals.impressions },
@@ -494,7 +496,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
         { stage: 'Reach', value: totals.reach, rate: totals.impressions > 0 ? totals.reach / totals.impressions : 0 },
         { stage: 'Link Clicks', value: totals.link_clicks, rate: totals.reach > 0 ? totals.link_clicks / totals.reach : 0 },
         ...(useMessageCampaignMode
-          ? [{ stage: 'Mensagens', value: totals.leads, rate: totals.link_clicks > 0 ? totals.leads / totals.link_clicks : 0 }]
+          ? [{ stage: 'Mensagens', value: messagesForFunnel, rate: totals.link_clicks > 0 ? messagesForFunnel / totals.link_clicks : 0 }]
           : [
               { stage: 'Landing Page Views', value: totals.landing_page_views, rate: totals.link_clicks > 0 ? totals.landing_page_views / totals.link_clicks : 0 },
               { stage: 'Leads', value: totals.leads, rate: totals.landing_page_views > 0 ? totals.leads / totals.landing_page_views : 0 },
@@ -505,7 +507,9 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
     ? (totals.impressions > 0 ? totals.leads / totals.impressions : 0)
     : useRdMode
       ? (totals.impressions > 0 ? rdMqlCount / totals.impressions : 0)
-      : (totals.impressions > 0 ? totals.leads / totals.impressions : 0)
+      : useMessageCampaignMode
+        ? (totals.impressions > 0 ? messagesForFunnel / totals.impressions : 0)
+        : (totals.impressions > 0 ? totals.leads / totals.impressions : 0)
   const funnelVisualWidths = selectedPlatform === 'google'
     ? [88, 64, 40]
     : useRdMode
@@ -1052,8 +1056,8 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                     <div className="metric"><div className="label">{useAgencyFormMode ? agencyLeadLabel : 'Leads Gerenciador'}</div><div className="value">{fInt(totals.leads)}</div></div>
                     {useMessageCampaignMode ? (
                       <>
-                        <div className="metric"><div className="label">Mensagens</div><div className="value">{fInt(totals.leads)}</div></div>
-                        <div className="metric"><div className="label">Custo por Mensagem</div><div className="value">{totals.leads > 0 ? fMoney(totals.amount_spent / totals.leads) : '—'}</div></div>
+                        <div className="metric"><div className="label">Mensagens</div><div className="value">{fInt(totals.messages)}</div></div>
+                        <div className="metric"><div className="label">Custo por Mensagem</div><div className="value">{totals.messages > 0 ? fMoney(totals.amount_spent / totals.messages) : '—'}</div></div>
                       </>
                     ) : null}
                     {useRdMode ? (

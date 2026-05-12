@@ -80,6 +80,12 @@ function actionValue(actions, keys) {
 }
 
 const DEFAULT_LEAD_KEYS = ['lead', 'offsite_conversion.fb_pixel_lead', 'onsite_web_lead']
+const DEFAULT_MESSAGE_KEYS = [
+  'onsite_conversion.messaging_conversation_started_7d',
+  'onsite_conversion.messaging_first_reply',
+  'onsite_conversion.total_messaging_connection',
+  'messaging_conversation_started_7d',
+]
 const DEFAULT_VIEW_FORM_KEYS = [
   'onsite_conversion.lead_form_view',
   'lead_form_view',
@@ -148,6 +154,7 @@ function buildCampaignMetricRow(clientId, raw, config, campaignBudgetById) {
   const leads = config.leadActionKey
     ? metricValueFromActions(actions, conversions, config.leadActionKey, DEFAULT_LEAD_KEYS)
     : actionValue(actions, DEFAULT_LEAD_KEYS)
+  const messages = metricValueFromActions(actions, conversions, config.messageActionKey, DEFAULT_MESSAGE_KEYS)
   const viewForms = metricValueFromActions(actions, conversions, config.formViewActionKey, DEFAULT_VIEW_FORM_KEYS)
   const formStarts = metricValueFromActions(actions, conversions, config.formStartActionKey, DEFAULT_FORM_START_KEYS)
   const formSubmits = metricValueFromActions(actions, conversions, config.formSubmitActionKey, DEFAULT_FORM_SUBMIT_KEYS)
@@ -166,6 +173,7 @@ function buildCampaignMetricRow(clientId, raw, config, campaignBudgetById) {
     link_clicks: linkClicks,
     landing_page_views: landingPageViews,
     leads: leads,
+    messages: messages,
     view_forms: viewForms,
     form_starts: formStarts,
     form_submits: formSubmits,
@@ -182,6 +190,7 @@ function buildAdMetricRow(clientId, raw, config) {
   const leads = config.leadActionKey
     ? metricValueFromActions(actions, conversions, config.leadActionKey, DEFAULT_LEAD_KEYS)
     : actionValue(actions, DEFAULT_LEAD_KEYS)
+  const messages = metricValueFromActions(actions, conversions, config.messageActionKey, DEFAULT_MESSAGE_KEYS)
   const viewForms = metricValueFromActions(actions, conversions, config.formViewActionKey, DEFAULT_VIEW_FORM_KEYS)
   const formStarts = metricValueFromActions(actions, conversions, config.formStartActionKey, DEFAULT_FORM_START_KEYS)
   const formSubmits = metricValueFromActions(actions, conversions, config.formSubmitActionKey, DEFAULT_FORM_SUBMIT_KEYS)
@@ -201,6 +210,7 @@ function buildAdMetricRow(clientId, raw, config) {
     link_clicks: linkClicks,
     landing_page_views: landingPageViews,
     leads: leads,
+    messages: messages,
     view_forms: viewForms,
     form_starts: formStarts,
     form_submits: formSubmits,
@@ -286,13 +296,47 @@ async function supabaseUpsert(table, rows, onConflict) {
 
   if (
     table === 'meta_daily_campaign_metrics' &&
+    errorText.includes("Could not find the 'messages' column")
+  ) {
+    const rowsWithoutMessages = rows.map(({ messages, ...rest }) => rest)
+    const retry = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(rowsWithoutMessages)
+    })
+    if (retry.ok) {
+      console.warn('meta_daily_campaign_metrics: fallback sem messages aplicado com sucesso')
+      return
+    }
+    throw new Error(`Supabase UPSERT failed (${retry.status}) after fallback: ${await retry.text()}`)
+  }
+
+  if (
+    table === 'meta_daily_ad_metrics' &&
+    errorText.includes("Could not find the 'messages' column")
+  ) {
+    const rowsWithoutMessages = rows.map(({ messages, ...rest }) => rest)
+    const retry = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(rowsWithoutMessages)
+    })
+    if (retry.ok) {
+      console.warn('meta_daily_ad_metrics: fallback sem messages aplicado com sucesso')
+      return
+    }
+    throw new Error(`Supabase UPSERT failed (${retry.status}) after fallback: ${await retry.text()}`)
+  }
+
+  if (
+    table === 'meta_daily_campaign_metrics' &&
     (
       errorText.includes("Could not find the 'view_forms' column") ||
       errorText.includes("Could not find the 'form_starts' column") ||
       errorText.includes("Could not find the 'form_submits' column")
     )
   ) {
-    const rowsWithoutFormCols = rows.map(({ view_forms, form_starts, form_submits, ...rest }) => rest)
+    const rowsWithoutFormCols = rows.map(({ view_forms, form_starts, form_submits, messages, ...rest }) => rest)
     const retry = await fetch(url, {
       method: 'POST',
       headers,
@@ -313,7 +357,7 @@ async function supabaseUpsert(table, rows, onConflict) {
       errorText.includes("Could not find the 'form_submits' column")
     )
   ) {
-    const rowsWithoutFormCols = rows.map(({ view_forms, form_starts, form_submits, ...rest }) => rest)
+    const rowsWithoutFormCols = rows.map(({ view_forms, form_starts, form_submits, messages, ...rest }) => rest)
     const retry = await fetch(url, {
       method: 'POST',
       headers,
@@ -706,7 +750,7 @@ async function main() {
   const accounts = await supabaseGet('client_ad_accounts?select=client_id,ad_account_id,is_active&is_active=eq.true')
   let clientConfigs = []
   try {
-    clientConfigs = await supabaseGet('clients?select=id,lead_action_key,form_view_action_key,form_start_action_key,form_submit_action_key')
+    clientConfigs = await supabaseGet('clients?select=id,lead_action_key,message_action_key,form_view_action_key,form_start_action_key,form_submit_action_key')
   } catch {
     clientConfigs = await supabaseGet('clients?select=id,lead_action_key')
   }
@@ -714,6 +758,7 @@ async function main() {
     c.id,
     {
       leadActionKey: c.lead_action_key || null,
+      messageActionKey: c.message_action_key || null,
       formViewActionKey: c.form_view_action_key || null,
       formStartActionKey: c.form_start_action_key || null,
       formSubmitActionKey: c.form_submit_action_key || null,
@@ -766,15 +811,16 @@ async function main() {
 
       const config = configByClient.get(clientId) || {
         leadActionKey: null,
+        messageActionKey: null,
         formViewActionKey: null,
         formStartActionKey: null,
         formSubmitActionKey: null,
       }
       config.leadActionKey = getEffectiveLeadActionKey(clientId, config.leadActionKey)
       if (config.leadActionKey) console.log(`client ${clientId}: using custom lead action key "${config.leadActionKey}"`)
-      if (config.formViewActionKey || config.formStartActionKey || config.formSubmitActionKey) {
+      if (config.formViewActionKey || config.formStartActionKey || config.formSubmitActionKey || config.messageActionKey) {
         console.log(
-          `client ${clientId}: custom form keys view="${config.formViewActionKey || '-'}" start="${config.formStartActionKey || '-'}" submit="${config.formSubmitActionKey || '-'}"`
+          `client ${clientId}: custom keys message="${config.messageActionKey || '-'}" view="${config.formViewActionKey || '-'}" start="${config.formStartActionKey || '-'}" submit="${config.formSubmitActionKey || '-'}"`
         )
       }
 
@@ -832,7 +878,7 @@ async function main() {
         const key = `${row.date}|${row.campaign_name}|${row.project_tag}`
         if (!campaignMap.has(key)) { campaignMap.set(key, { ...row }); continue }
         const existing = campaignMap.get(key)
-        for (const field of ['daily_budget','reach','impressions','amount_spent','link_clicks','landing_page_views','leads','view_forms','form_starts','form_submits','follows','reactions','comments_count','shares','saves','post_engagement']) {
+        for (const field of ['daily_budget','reach','impressions','amount_spent','link_clicks','landing_page_views','leads','messages','view_forms','form_starts','form_submits','follows','reactions','comments_count','shares','saves','post_engagement']) {
           existing[field] = (existing[field] || 0) + (row[field] || 0)
         }
       }

@@ -623,7 +623,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   if (needsAdLevelData && selectedPlatform === 'meta') {
     let adRes: any = await dataClient
       .from('meta_daily_ad_metrics')
-      .select('date,campaign_name,project_tag,adset_name,ad_name,reach,impressions,amount_spent,link_clicks,landing_page_views,leads,view_forms,form_starts,form_submits,follows,reactions,comments_count,shares,saves,post_engagement')
+      .select('date,campaign_name,project_tag,adset_name,ad_name,reach,impressions,amount_spent,link_clicks,landing_page_views,leads,messages,view_forms,form_starts,form_submits,follows,reactions,comments_count,shares,saves,post_engagement')
       .eq('client_id', effectiveClientId)
       .gte('date', start)
       .lte('date', end)
@@ -1127,11 +1127,18 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                     { key: 'amount_spent', label: 'Amount Spent' },
                     { key: 'impressions', label: 'Impressions' },
                     { key: 'link_clicks', label: 'Clicks' },
-                    { key: 'leads', label: useAgencyFormMode ? agencyLeadLabel : 'Leads' },
-                    { key: 'mql', label: 'MQL' },
-                    { key: 'cpmql', label: 'Custo/MQL' },
+                    ...(useMessageCampaignMode
+                      ? [
+                          { key: 'messages', label: 'Mensagens' },
+                          { key: 'cpmessage', label: 'Custo/Mensagem' },
+                        ]
+                      : [
+                          { key: 'leads', label: useAgencyFormMode ? agencyLeadLabel : 'Leads' },
+                          { key: 'mql', label: 'MQL' },
+                          { key: 'cpmql', label: 'Custo/MQL' },
+                        ]),
                     { key: 'cpc', label: 'CPC' },
-                    { key: 'cpl', label: 'CPL' },
+                    ...(useMessageCampaignMode ? [] : [{ key: 'cpl', label: 'CPL' }]),
                     { key: 'ctr', label: 'CTR' },
                     { key: 'cpm', label: 'CPM' },
                   ]}
@@ -1146,6 +1153,8 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                         impressions: fInt(row.totals.impressions),
                         link_clicks: fInt(row.totals.link_clicks),
                         leads: fInt(row.totals.leads),
+                        messages: fInt(row.totals.messages),
+                        cpmessage: row.totals.messages > 0 ? fMoney(row.totals.cost_per_message) : '—',
                         mql: mql > 0 ? fInt(mql) : '—',
                         cpmql: mql > 0 ? fMoney(cpmql) : '—',
                         cpc: fMoney(row.totals.cpc),
@@ -1154,7 +1163,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                         cpm: fMoney(row.totals.cpm),
                       }
                     }),
-                    ...(unattributedMqlCount > 0
+                    ...(!useMessageCampaignMode && unattributedMqlCount > 0
                       ? [{
                           name: '(MQL sem campanha atribuída)',
                           amount_spent: '—',
@@ -1270,11 +1279,18 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                     { key: 'amount_spent', label: 'Amount Spent' },
                     { key: 'impressions', label: 'Impressions' },
                     { key: 'link_clicks', label: 'Clicks' },
-                    { key: 'leads', label: useAgencyFormMode ? agencyLeadLabel : 'Leads' },
-                    { key: 'mql', label: 'MQL (est.)' },
-                    { key: 'cpmql', label: 'Custo/MQL (est.)' },
+                    ...(useMessageCampaignMode
+                      ? [
+                          { key: 'messages', label: 'Mensagens' },
+                          { key: 'cpmessage', label: 'Custo/Mensagem' },
+                        ]
+                      : [
+                          { key: 'leads', label: useAgencyFormMode ? agencyLeadLabel : 'Leads' },
+                          { key: 'mql', label: 'MQL (est.)' },
+                          { key: 'cpmql', label: 'Custo/MQL (est.)' },
+                        ]),
                     { key: 'cpc', label: 'CPC' },
-                    { key: 'cpl', label: 'CPL' },
+                    ...(useMessageCampaignMode ? [] : [{ key: 'cpl', label: 'CPL' }]),
                     { key: 'ctr', label: 'CTR' },
                     { key: 'cpm', label: 'CPM' },
                   ]}
@@ -1288,6 +1304,8 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                       impressions: fInt(row.totals.impressions),
                       link_clicks: fInt(row.totals.link_clicks),
                       leads: fInt(row.totals.leads),
+                      messages: fInt(row.totals.messages),
+                      cpmessage: row.totals.messages > 0 ? fMoney(row.totals.cost_per_message) : '—',
                       mql: estMql > 0 ? fInt(Math.round(estMql)) : '—',
                       cpmql: estMql > 0 ? fMoney(cpmql) : '—',
                       cpc: fMoney(row.totals.cpc),
@@ -1362,11 +1380,18 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                     { key: 'amount_spent', label: 'Amount Spent' },
                     { key: 'impressions', label: 'Impressions' },
                     { key: 'link_clicks', label: 'Clicks' },
-                    { key: 'leads', label: 'Leads' },
-                    { key: 'mql', label: 'MQL (est.)' },
-                    { key: 'cpmql', label: 'Custo/MQL (est.)' },
+                    ...(useMessageCampaignMode
+                      ? [
+                          { key: 'messages', label: 'Mensagens' },
+                          { key: 'cpmessage', label: 'Custo/Mensagem' },
+                        ]
+                      : [
+                          { key: 'leads', label: 'Leads' },
+                          { key: 'mql', label: 'MQL (est.)' },
+                          { key: 'cpmql', label: 'Custo/MQL (est.)' },
+                        ]),
                     { key: 'cpc', label: 'CPC' },
-                    { key: 'cpl', label: 'CPL' },
+                    ...(useMessageCampaignMode ? [] : [{ key: 'cpl', label: 'CPL' }]),
                     { key: 'ctr', label: 'CTR' },
                     { key: 'cpm', label: 'CPM' },
                   ]}
@@ -1380,6 +1405,8 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                       impressions: fInt(row.totals.impressions),
                       link_clicks: fInt(row.totals.link_clicks),
                       leads: fInt(row.totals.leads),
+                      messages: fInt(row.totals.messages),
+                      cpmessage: row.totals.messages > 0 ? fMoney(row.totals.cost_per_message) : '—',
                       mql: estMql > 0 ? fInt(Math.round(estMql)) : '—',
                       cpmql: estMql > 0 ? fMoney(cpmql) : '—',
                       cpc: fMoney(row.totals.cpc),

@@ -366,6 +366,8 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   })
 
   const totals = consolidate(filtered)
+  const useMessageMetricsMode =
+    selectedPlatform === 'meta' && (useMessageCampaignMode || totals.messages > 0)
   const byDayRows = byDay(filtered)
   const campaignRows = byCampaign(filtered)
 
@@ -463,7 +465,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   const attributedMqlCount = Array.from(campaignMqlByName.values()).reduce((acc, n) => acc + n, 0)
   const unattributedMqlCount = Math.max(0, rdMqlCount - attributedMqlCount)
 
-  const messagesForFunnel = useMessageCampaignMode ? totals.messages : 0
+  const messagesForFunnel = useMessageMetricsMode ? totals.messages : 0
   const funnel = selectedPlatform === 'google'
     ? [
         { stage: 'Impressions', value: totals.impressions },
@@ -497,7 +499,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
         { stage: 'Impressions', value: totals.impressions },
         { stage: 'Reach', value: totals.reach, rate: totals.impressions > 0 ? totals.reach / totals.impressions : 0 },
         { stage: 'Link Clicks', value: totals.link_clicks, rate: totals.reach > 0 ? totals.link_clicks / totals.reach : 0 },
-        ...(useMessageCampaignMode
+        ...(useMessageMetricsMode
           ? [{ stage: 'Mensagens', value: messagesForFunnel, rate: totals.link_clicks > 0 ? messagesForFunnel / totals.link_clicks : 0 }]
           : [
               { stage: 'Landing Page Views', value: totals.landing_page_views, rate: totals.link_clicks > 0 ? totals.landing_page_views / totals.link_clicks : 0 },
@@ -509,7 +511,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
     ? (totals.impressions > 0 ? totals.leads / totals.impressions : 0)
     : useRdMode
       ? (totals.impressions > 0 ? rdMqlCount / totals.impressions : 0)
-      : useMessageCampaignMode
+      : useMessageMetricsMode
         ? (totals.impressions > 0 ? messagesForFunnel / totals.impressions : 0)
         : (totals.impressions > 0 ? totals.leads / totals.impressions : 0)
   const funnelVisualWidths = selectedPlatform === 'google'
@@ -518,7 +520,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
       ? [90, 80, 68, 56, 44, 34]
       : useAgencyFormMode
         ? [92, 84, 74, 64, 54, 44, 36]
-        : useMessageCampaignMode
+        : useMessageMetricsMode
           ? [90, 80, 68, 56]
           : [90, 80, 68, 56, 44]
   const funnelWithWidth = funnel.map((step, index) => ({
@@ -814,8 +816,10 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
         link_clicks: fInt(day.totals.link_clicks),
         landing_page_views: fInt(day.totals.landing_page_views),
         leads: fInt(day.totals.leads),
+        messages: fInt(day.totals.messages),
         cpc: fMoney(day.totals.cpc),
         cpl: fMoney(day.totals.cpl),
+        cpmessage: day.totals.messages > 0 ? fMoney(day.totals.cost_per_message) : '—',
         ctr: fPct(day.totals.ctr),
         cpm: fMoney(day.totals.cpm),
         connect_rate: fPct(day.totals.connect_rate),
@@ -1056,7 +1060,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                     ) : null}
                     <div className="metric"><div className="label">Landing Page Views</div><div className="value">{fInt(totals.landing_page_views)}</div></div>
                     <div className="metric"><div className="label">{useAgencyFormMode ? agencyLeadLabel : 'Leads Gerenciador'}</div><div className="value">{fInt(totals.leads)}</div></div>
-                    {useMessageCampaignMode ? (
+                    {useMessageMetricsMode ? (
                       <>
                         <div className="metric"><div className="label">Mensagens</div><div className="value">{fInt(totals.messages)}</div></div>
                         <div className="metric"><div className="label">Custo por Mensagem</div><div className="value">{totals.messages > 0 ? fMoney(totals.amount_spent / totals.messages) : '—'}</div></div>
@@ -1129,7 +1133,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                     { key: 'amount_spent', label: 'Amount Spent' },
                     { key: 'impressions', label: 'Impressions' },
                     { key: 'link_clicks', label: 'Clicks' },
-                    ...(useMessageCampaignMode
+                    ...(useMessageMetricsMode
                       ? [
                           { key: 'messages', label: 'Mensagens' },
                           { key: 'cpmessage', label: 'Custo/Mensagem' },
@@ -1140,7 +1144,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                           { key: 'cpmql', label: 'Custo/MQL' },
                         ]),
                     { key: 'cpc', label: 'CPC' },
-                    ...(useMessageCampaignMode ? [] : [{ key: 'cpl', label: 'CPL' }]),
+                    ...(useMessageMetricsMode ? [] : [{ key: 'cpl', label: 'CPL' }]),
                     { key: 'ctr', label: 'CTR' },
                     { key: 'cpm', label: 'CPM' },
                   ]}
@@ -1165,7 +1169,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                         cpm: fMoney(row.totals.cpm),
                       }
                     }),
-                    ...(!useMessageCampaignMode && unattributedMqlCount > 0
+                    ...(!useMessageMetricsMode && unattributedMqlCount > 0
                       ? [{
                           name: '(MQL sem campanha atribuída)',
                           amount_spent: '—',
@@ -1193,7 +1197,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                       { key: 'impressions', label: 'Impressions' },
                     { key: 'link_clicks', label: 'Link Clicks' },
                     { key: 'landing_page_views', label: 'Landing Page Views' },
-                    ...(useMessageCampaignMode
+                    ...(useMessageMetricsMode
                       ? [
                           { key: 'messages', label: 'Mensagens' },
                           { key: 'cpmessage', label: 'Custo/Mensagem' },
@@ -1204,7 +1208,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                           { key: 'cpmql', label: 'Custo/MQL' },
                         ]),
                     { key: 'cpc', label: 'CPC' },
-                    ...(useMessageCampaignMode ? [] : [{ key: 'cpl', label: 'CPL' }]),
+                    ...(useMessageMetricsMode ? [] : [{ key: 'cpl', label: 'CPL' }]),
                     { key: 'ctr', label: 'CTR' },
                     { key: 'cpm', label: 'CPM' },
                     { key: 'connect_rate', label: 'Connect Rate' },
@@ -1234,7 +1238,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                         connect_rate: fPct(row.totals.connect_rate),
                       }
                     }),
-                    ...(!useMessageCampaignMode && unattributedMqlCount > 0
+                    ...(!useMessageMetricsMode && unattributedMqlCount > 0
                       ? [{
                           name: '(MQL sem campanha atribuída)',
                           amount_spent: '—',
@@ -1270,6 +1274,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
               clientId={effectiveClientId}
               tag={selectedTag}
               campaignFilter={selectedCampaignQuery}
+              useMessageMetricsMode={useMessageMetricsMode}
             />
           </section>
         ) : null}
@@ -1290,7 +1295,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                     { key: 'amount_spent', label: 'Amount Spent' },
                     { key: 'impressions', label: 'Impressions' },
                     { key: 'link_clicks', label: 'Clicks' },
-                    ...(useMessageCampaignMode
+                    ...(useMessageMetricsMode
                       ? [
                           { key: 'messages', label: 'Mensagens' },
                           { key: 'cpmessage', label: 'Custo/Mensagem' },
@@ -1301,7 +1306,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                           { key: 'cpmql', label: 'Custo/MQL (est.)' },
                         ]),
                     { key: 'cpc', label: 'CPC' },
-                    ...(useMessageCampaignMode ? [] : [{ key: 'cpl', label: 'CPL' }]),
+                    ...(useMessageMetricsMode ? [] : [{ key: 'cpl', label: 'CPL' }]),
                     { key: 'ctr', label: 'CTR' },
                     { key: 'cpm', label: 'CPM' },
                   ]}
@@ -1337,7 +1342,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                     { key: 'impressions', label: 'Impressions' },
                     { key: 'link_clicks', label: 'Link Clicks' },
                     { key: 'landing_page_views', label: 'Landing Page Views' },
-                    ...(useMessageCampaignMode
+                    ...(useMessageMetricsMode
                       ? [
                           { key: 'messages', label: 'Mensagens' },
                           { key: 'cpmessage', label: 'Custo/Mensagem' },
@@ -1348,7 +1353,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                           { key: 'cpmql', label: 'Custo/MQL (est.)' },
                         ]),
                     { key: 'cpc', label: 'CPC' },
-                    ...(useMessageCampaignMode ? [] : [{ key: 'cpl', label: 'CPL' }]),
+                    ...(useMessageMetricsMode ? [] : [{ key: 'cpl', label: 'CPL' }]),
                     { key: 'ctr', label: 'CTR' },
                     { key: 'cpm', label: 'CPM' },
                     { key: 'connect_rate', label: 'Connect Rate' },
@@ -1400,7 +1405,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                     { key: 'amount_spent', label: 'Amount Spent' },
                     { key: 'impressions', label: 'Impressions' },
                     { key: 'link_clicks', label: 'Clicks' },
-                    ...(useMessageCampaignMode
+                    ...(useMessageMetricsMode
                       ? [
                           { key: 'messages', label: 'Mensagens' },
                           { key: 'cpmessage', label: 'Custo/Mensagem' },
@@ -1411,7 +1416,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                           { key: 'cpmql', label: 'Custo/MQL (est.)' },
                         ]),
                     { key: 'cpc', label: 'CPC' },
-                    ...(useMessageCampaignMode ? [] : [{ key: 'cpl', label: 'CPL' }]),
+                    ...(useMessageMetricsMode ? [] : [{ key: 'cpl', label: 'CPL' }]),
                     { key: 'ctr', label: 'CTR' },
                     { key: 'cpm', label: 'CPM' },
                   ]}
@@ -1446,7 +1451,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                     { key: 'impressions', label: 'Impressions' },
                     { key: 'link_clicks', label: 'Link Clicks' },
                     { key: 'landing_page_views', label: 'Landing Page Views' },
-                    ...(useMessageCampaignMode
+                    ...(useMessageMetricsMode
                       ? [
                           { key: 'messages', label: 'Mensagens' },
                           { key: 'cpmessage', label: 'Custo/Mensagem' },
@@ -1457,7 +1462,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                           { key: 'cpmql', label: 'Custo/MQL (est.)' },
                         ]),
                     { key: 'cpc', label: 'CPC' },
-                    ...(useMessageCampaignMode ? [] : [{ key: 'cpl', label: 'CPL' }]),
+                    ...(useMessageMetricsMode ? [] : [{ key: 'cpl', label: 'CPL' }]),
                     { key: 'ctr', label: 'CTR' },
                     { key: 'cpm', label: 'CPM' },
                     { key: 'connect_rate', label: 'Connect Rate' },

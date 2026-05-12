@@ -12,8 +12,10 @@ export type DayRow = {
   link_clicks: string
   landing_page_views: string
   leads: string
+  messages?: string
   cpc: string
   cpl: string
+  cpmessage?: string
   ctr: string
   cpm: string
   connect_rate: string
@@ -34,9 +36,10 @@ type Props = {
   clientId: string
   tag: string
   campaignFilter: string
+  useMessageMetricsMode?: boolean
 }
 
-const COLUMNS: Array<{ key: SortKey; label: string }> = [
+const DEFAULT_COLUMNS: Array<{ key: SortKey; label: string }> = [
   { key: 'date', label: 'Data' },
   { key: 'amount_spent', label: 'Investimento' },
   { key: 'reach', label: 'Alcance' },
@@ -51,7 +54,7 @@ const COLUMNS: Array<{ key: SortKey; label: string }> = [
   { key: 'connect_rate', label: 'Connect Rate' },
 ]
 
-export function DailySection({ days, clientId, tag, campaignFilter }: Props) {
+export function DailySection({ days, clientId, tag, campaignFilter, useMessageMetricsMode = false }: Props) {
   const [selectedDay, setSelectedDay] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [campaigns, setCampaigns] = useState<CampaignRow[]>([])
@@ -59,6 +62,22 @@ export function DailySection({ days, clientId, tag, campaignFilter }: Props) {
   const [sortKey, setSortKey] = useState<SortKey>('date')
   const [sortDir, setSortDir] = useState<SortDir>('desc')
   const cache = useRef<Map<string, CampaignRow[]>>(new Map())
+  const columns: Array<{ key: SortKey; label: string }> = useMessageMetricsMode
+    ? [
+        { key: 'date', label: 'Data' },
+        { key: 'amount_spent', label: 'Investimento' },
+        { key: 'reach', label: 'Alcance' },
+        { key: 'impressions', label: 'Impressões' },
+        { key: 'link_clicks', label: 'Cliques' },
+        { key: 'landing_page_views', label: 'LP Views' },
+        { key: 'messages', label: 'Mensagens' },
+        { key: 'cpc', label: 'CPC' },
+        { key: 'cpmessage', label: 'Custo/Mensagem' },
+        { key: 'ctr', label: 'CTR' },
+        { key: 'cpm', label: 'CPM' },
+        { key: 'connect_rate', label: 'Connect Rate' },
+      ]
+    : DEFAULT_COLUMNS
 
   const selectedDayTotals = selectedDay
     ? (days.find((d) => d.date === selectedDay)?.totals ?? null)
@@ -132,7 +151,7 @@ export function DailySection({ days, clientId, tag, campaignFilter }: Props) {
         <table>
           <thead>
             <tr>
-              {COLUMNS.map((col) => {
+              {columns.map((col) => {
                 const active = sortKey === col.key
                 return (
                   <th
@@ -178,9 +197,9 @@ export function DailySection({ days, clientId, tag, campaignFilter }: Props) {
                   <td>{day.impressions}</td>
                   <td>{day.link_clicks}</td>
                   <td>{day.landing_page_views}</td>
-                  <td>{day.leads}</td>
+                  <td>{useMessageMetricsMode ? (day.messages || '0') : day.leads}</td>
                   <td>{day.cpc}</td>
-                  <td>{day.cpl}</td>
+                  <td>{useMessageMetricsMode ? (day.cpmessage || '—') : day.cpl}</td>
                   <td>{day.ctr}</td>
                   <td>{day.cpm}</td>
                   <td>{day.connect_rate}</td>

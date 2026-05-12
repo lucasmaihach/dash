@@ -126,6 +126,7 @@ type AdminClientOption = {
 const REPORT_TIMEZONE = process.env.REPORT_TIMEZONE || 'America/Sao_Paulo'
 const IOX_CLIENT_ID = 'd9cc196d-f8d6-4042-9da4-6fe93a31b215'
 const AGENCIA_CLIENT_ID = 'b8724c80-9c00-48ce-b9e4-245ba9a69a20'
+const VANDRE_CLIENT_ID = '0976f86f-7183-41f6-9211-cbe6ecfc80ed'
 
 function dateKeyInTimezone(value: string | null | undefined, timezone: string): string {
   if (!value) return ''
@@ -292,7 +293,8 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
     .maybeSingle()
   const useRdMode = effectiveClientId === IOX_CLIENT_ID && !!rdCred
   const useAgencyFormMode = effectiveClientId === AGENCIA_CLIENT_ID
-  const useMessageCampaignMode = normalizeText(viewingClientName).includes('vandre')
+  const useMessageCampaignMode =
+    effectiveClientId === VANDRE_CLIENT_ID || normalizeText(viewingClientName).includes('vandre')
   const agencyLeadLabel = 'Reuniões Agendadas'
 
   const { data: baseRows, error: baseError } = selectedPlatform === 'google'

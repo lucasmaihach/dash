@@ -10,6 +10,9 @@ create table if not exists public.clients (
   form_view_action_key text,
   form_start_action_key text,
   form_submit_action_key text,
+  last_ingest_since date,
+  last_ingest_until date,
+  last_ingest_at timestamptz,
   status text not null default 'active',
   created_at timestamptz not null default now()
 );
@@ -47,7 +50,10 @@ alter table if exists public.clients
   add column if not exists message_action_key text,
   add column if not exists form_view_action_key text,
   add column if not exists form_start_action_key text,
-  add column if not exists form_submit_action_key text;
+  add column if not exists form_submit_action_key text,
+  add column if not exists last_ingest_since date,
+  add column if not exists last_ingest_until date,
+  add column if not exists last_ingest_at timestamptz;
 
 -- Daily metrics table consumed by dashboard
 -- Uma linha por (client_id, date, campaign_name, project_tag) — sem breakdowns de placement.

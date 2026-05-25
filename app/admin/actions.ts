@@ -6,6 +6,16 @@ import { getSupabaseAdminClient } from '@/lib/supabase/admin'
 import { encrypt } from '@/lib/crypto'
 import { runIngest } from '@/lib/ingestRunner'
 
+function formatDateOnly(date: Date) {
+  return date.toISOString().slice(0, 10)
+}
+
+function subtractDays(date: Date, days: number) {
+  const copy = new Date(date)
+  copy.setDate(copy.getDate() - days)
+  return copy
+}
+
 async function requireAdmin() {
   const supabase = await getSupabaseServerClient()
   const {
@@ -141,9 +151,31 @@ export async function refreshClientAction(formData: FormData) {
   const clientId = String(formData.get('client_id') || '').trim()
   if (!clientId) redirect('/admin?error=invalid_client_id')
 
+  const admin = getSupabaseAdminClient()
   let failed = false
   try {
-    await runIngest(clientId, { mode: 'refresh' })
+    const { data: clientMeta } = await admin
+      .from('clients')
+      .select('last_ingest_until')
+      .eq('id', clientId)
+      .maybeSingle()
+
+    const untilDate = new Date()
+    const fallbackSinceDate = subtractDays(untilDate, 90)
+    const lastUntil = clientMeta?.last_ingest_until ? new Date(clientMeta.last_ingest_until) : null
+    const sinceDate = lastUntil ? subtractDays(lastUntil, 1) : fallbackSinceDate
+    const since = formatDateOnly(sinceDate)
+    const until = formatDateOnly(untilDate)
+
+    await runIngest(clientId, { mode: 'refresh', since, until })
+    await admin
+      .from('clients')
+      .update({
+        last_ingest_since: since,
+        last_ingest_until: until,
+        last_ingest_at: new Date().toISOString(),
+      })
+      .eq('id', clientId)
   } catch (err) {
     console.error('[refreshClientAction] ingest:', err)
     failed = true

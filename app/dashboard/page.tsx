@@ -292,10 +292,13 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   // Busca nome da empresa do cliente (sempre via admin — já validado acima)
   const { data: clientData } = await getSupabaseAdminClient()
     .from('clients')
-    .select('name')
+    .select('name,last_ingest_at,last_ingest_since,last_ingest_until')
     .eq('id', effectiveClientId)
     .single()
   const viewingClientName = clientData?.name || null
+  const lastIngestAt = clientData?.last_ingest_at || null
+  const lastIngestSince = clientData?.last_ingest_since || null
+  const lastIngestUntil = clientData?.last_ingest_until || null
 
   const isAdminUser = profile.role === 'admin'
   let adminClientOptions: AdminClientOption[] = []
@@ -982,6 +985,15 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
           </form>
         </div>
       </div>
+
+      {lastIngestAt ? (
+        <div className="page-wrap" style={{ marginTop: 8 }}>
+          <p style={{ color: 'var(--text-muted)', fontSize: 12 }}>
+            Última atualização: {new Date(lastIngestAt).toLocaleString('pt-BR')}
+            {lastIngestSince && lastIngestUntil ? ` · Janela: ${lastIngestSince} até ${lastIngestUntil}` : ''}
+          </p>
+        </div>
+      ) : null}
 
       <div className="page-wrap">
         <section className="hero reveal d2">

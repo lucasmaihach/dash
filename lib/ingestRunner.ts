@@ -9,6 +9,8 @@ export type IngestMode = 'default' | 'initial' | 'refresh'
 
 type IngestOptions = {
   mode?: IngestMode
+  since?: string
+  until?: string
 }
 
 function formatDateOnly(date: Date) {
@@ -29,7 +31,9 @@ function buildIngestWindow(mode: IngestMode) {
 
   if (mode === 'refresh') {
     const since = new Date(until)
-    since.setDate(since.getDate() - 6)
+    // Refresh manual do dashboard precisa cobrir janelas maiores de análise
+    // (ex.: mês atual + mês anterior), senão o total fica menor que o Ads Manager.
+    since.setDate(since.getDate() - 90)
     return {
       since: formatDateOnly(since),
       until: formatDateOnly(until),
@@ -50,7 +54,9 @@ async function runScript(
   const envFile = path.join(cwd, '.env.local')
   const args = existsSync(envFile) ? ['--env-file=.env.local', scriptPath] : [scriptPath]
   const mode = options.mode ?? 'default'
-  const window = buildIngestWindow(mode)
+  const window = options.since && options.until
+    ? { since: options.since, until: options.until }
+    : buildIngestWindow(mode)
 
   await execFileAsync('node', args, {
     cwd,

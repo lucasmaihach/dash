@@ -60,6 +60,16 @@ function toShortReason(err: unknown): string {
   return encodeURIComponent(raw.slice(0, 180))
 }
 
+function formatDateOnly(date: Date) {
+  return date.toISOString().slice(0, 10)
+}
+
+function subtractDays(date: Date, days: number) {
+  const copy = new Date(date)
+  copy.setDate(copy.getDate() - days)
+  return copy
+}
+
 export async function refreshClientDataAction(formData: FormData) {
   const asClientId = String(formData.get('as') || '').trim()
   const returnTo = String(formData.get('return_to') || '/dashboard').trim()
@@ -92,7 +102,32 @@ export async function refreshClientDataAction(formData: FormData) {
 
   let ingestError: unknown = null
   try {
-    await runIngest(effectiveClientId, { mode: 'refresh' })
+    const admin = getSupabaseAdminClient()
+    const { data: clientMeta } = await admin
+      .from('clients')
+      .select('last_ingest_until')
+      .eq('id', effectiveClientId)
+      .maybeSingle()
+
+    const untilDate = new Date()
+    const fallbackSinceDate = subtractDays(untilDate, 90)
+    const lastUntil = clientMeta?.last_ingest_until ? new Date(clientMeta.last_ingest_until) : null
+    const sinceDate = lastUntil ? subtractDays(lastUntil, 1) : fallbackSinceDate
+
+    const since = formatDateOnly(sinceDate)
+    const until = formatDateOnly(untilDate)
+
+    await runIngest(effectiveClientId, { mode: 'refresh', since, until })
+
+    await admin
+      .from('clients')
+      .update({
+        last_ingest_since: since,
+        last_ingest_until: until,
+        last_ingest_at: new Date().toISOString(),
+      })
+      .eq('id', effectiveClientId)
+
     // Garante que a UI reflita os dados recém ingeridos mesmo se a revalidação
     // externa do script falhar (ex.: APP_BASE_URL/REVALIDATE_SECRET).
     revalidateTag(`metrics:${effectiveClientId}`)

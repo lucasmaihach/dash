@@ -399,7 +399,12 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   const start = makeDateValue(params.start, minDate)
   const end = makeDateValue(params.end, maxDate)
 
-  const filtered = rows.filter((r) => {
+  const dateFiltered = rows.filter((r) => {
+    const byStart = start ? r.date >= start : true
+    const byEnd = end ? r.date <= end : true
+    return byStart && byEnd
+  })
+  const textFiltered = dateFiltered.filter((r) => {
     const byTag = selectedTag
       ? (r.project_tag || '').toLowerCase().includes(selectedTag.toLowerCase()) ||
         (r.campaign_name || '').toLowerCase().includes(selectedTag.toLowerCase())
@@ -407,11 +412,13 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
     const byCampaign = selectedCampaignQuery
       ? (r.campaign_name || '').toLowerCase().includes(selectedCampaignQuery.toLowerCase())
       : true
-    const byStart = start ? r.date >= start : true
-    const byEnd = end ? r.date <= end : true
-    return byTag && byCampaign && byStart && byEnd
+    return byTag && byCampaign
   })
-  const hasRowsHiddenByFilters = rows.length > 0 && filtered.length === 0
+  const textFiltersActive = Boolean(selectedTag || selectedCampaignQuery)
+  const ignoredTextFilters = textFiltersActive && dateFiltered.length > 0 && textFiltered.length === 0
+  const activeTagFilter = ignoredTextFilters ? '' : selectedTag
+  const activeCampaignFilter = ignoredTextFilters ? '' : selectedCampaignQuery
+  const filtered = ignoredTextFilters ? dateFiltered : textFiltered
 
   const totals = consolidate(filtered)
   const useMessageMetricsMode =
@@ -438,8 +445,8 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
     const hasDate = Boolean(dateOnly)
     const byStart = start ? (hasDate ? dateOnly >= start : false) : true
     const byEnd = end ? (hasDate ? dateOnly <= end : false) : true
-    const byCampaign = selectedCampaignQuery
-      ? (row.utm_campaign || '').toLowerCase().includes(selectedCampaignQuery.toLowerCase())
+    const byCampaign = activeCampaignFilter
+      ? (row.utm_campaign || '').toLowerCase().includes(activeCampaignFilter.toLowerCase())
       : true
     return byStart && byEnd && byCampaign
   })
@@ -618,12 +625,12 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
       impressions: number; clicks: number; amount_spent: number; leads: number
     }>)
       .filter((r) => {
-        const byTagG = selectedTag
-          ? (r.project_tag || '').toLowerCase().includes(selectedTag.toLowerCase()) ||
-            (r.campaign_name || '').toLowerCase().includes(selectedTag.toLowerCase())
+        const byTagG = activeTagFilter
+          ? (r.project_tag || '').toLowerCase().includes(activeTagFilter.toLowerCase()) ||
+            (r.campaign_name || '').toLowerCase().includes(activeTagFilter.toLowerCase())
           : true
-        const byCampaignG = selectedCampaignQuery
-          ? (r.campaign_name || '').toLowerCase().includes(selectedCampaignQuery.toLowerCase())
+        const byCampaignG = activeCampaignFilter
+          ? (r.campaign_name || '').toLowerCase().includes(activeCampaignFilter.toLowerCase())
           : true
         return byTagG && byCampaignG
       })
@@ -691,12 +698,12 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
 
     adTableMissing = adRes.error?.code === '42P01'
     const adRows = ((adRes.data || []) as AdMetricRow[]).filter((r) => {
-      const byTag = selectedTag
-        ? (r.project_tag || '').toLowerCase().includes(selectedTag.toLowerCase()) ||
-          (r.campaign_name || '').toLowerCase().includes(selectedTag.toLowerCase())
+      const byTag = activeTagFilter
+        ? (r.project_tag || '').toLowerCase().includes(activeTagFilter.toLowerCase()) ||
+          (r.campaign_name || '').toLowerCase().includes(activeTagFilter.toLowerCase())
         : true
-      const byCampaign = selectedCampaignQuery
-        ? (r.campaign_name || '').toLowerCase().includes(selectedCampaignQuery.toLowerCase())
+      const byCampaign = activeCampaignFilter
+        ? (r.campaign_name || '').toLowerCase().includes(activeCampaignFilter.toLowerCase())
         : true
       return byTag && byCampaign
     })
@@ -887,8 +894,8 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
     platform: selectedPlatform !== 'meta' ? selectedPlatform : undefined,
     report: selectedReport?.id,
     view: selectedView,
-    tag: selectedTag || undefined,
-    campaign: selectedCampaignQuery || undefined,
+    tag: activeTagFilter || undefined,
+    campaign: activeCampaignFilter || undefined,
     start,
     end,
     as: isAdminView ? params.as : undefined,
@@ -1125,11 +1132,11 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
 
             <div className="field">
               <label htmlFor="tag">TAG (contém)</label>
-              <input id="tag" name="tag" defaultValue={selectedTag} placeholder="Digite a TAG" />
+              <input id="tag" name="tag" defaultValue={activeTagFilter} placeholder="Digite a TAG" />
             </div>
             <div className="field">
               <label htmlFor="campaign">Nome da campanha (contém)</label>
-              <input id="campaign" name="campaign" defaultValue={selectedCampaignQuery} placeholder="Digite parte do nome" />
+              <input id="campaign" name="campaign" defaultValue={activeCampaignFilter} placeholder="Digite parte do nome" />
             </div>
             <div className="field">
               <label htmlFor="start">Data inicial</label>
@@ -1159,11 +1166,10 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
           </form>
         </section>
 
-        {hasRowsHiddenByFilters ? (
+        {ignoredTextFilters ? (
           <section className="panel reveal d4">
             <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: 13 }}>
-              Existem dados no período carregado, mas os filtros atuais não retornaram linhas.
-              Remova TAG/Campanha ou clique em Limpar.
+              TAG/Campanha não encontrou dados para este cliente e período. O dashboard ignorou esse filtro e mostrou os dados disponíveis.
             </p>
           </section>
         ) : null}
@@ -1404,8 +1410,8 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
             <DailySection
               days={allDaysData}
               clientId={effectiveClientId}
-              tag={selectedTag}
-              campaignFilter={selectedCampaignQuery}
+              tag={activeTagFilter}
+              campaignFilter={activeCampaignFilter}
               useMessageMetricsMode={useMessageMetricsMode}
             />
           </section>

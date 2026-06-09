@@ -16,6 +16,10 @@ function subtractDays(date: Date, days: number) {
   return copy
 }
 
+function isMissingIngestTrackingColumns(error: { code?: string } | null) {
+  return error?.code === '42703' || error?.code === 'PGRST204'
+}
+
 async function requireAdmin() {
   const supabase = await getSupabaseServerClient()
   const {
@@ -178,7 +182,7 @@ export async function refreshClientAction(formData: FormData) {
         last_ingest_at: new Date().toISOString(),
       })
       .eq('id', clientId)
-    if (updateIngestError && updateIngestError.code !== '42703') {
+    if (updateIngestError && !isMissingIngestTrackingColumns(updateIngestError)) {
       throw updateIngestError
     }
   } catch (err) {

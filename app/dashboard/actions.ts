@@ -56,8 +56,16 @@ function buildDashboardRedirect(base: string, patch: string) {
 }
 
 function toShortReason(err: unknown): string {
-  const raw = err instanceof Error ? err.message : String(err)
+  const raw = err instanceof Error
+    ? err.message
+    : typeof err === 'object' && err !== null
+      ? JSON.stringify(err)
+      : String(err)
   return encodeURIComponent(raw.slice(0, 180))
+}
+
+function isMissingIngestTrackingColumns(error: { code?: string } | null) {
+  return error?.code === '42703' || error?.code === 'PGRST204'
 }
 
 function formatDateOnly(date: Date) {
@@ -129,7 +137,7 @@ export async function refreshClientDataAction(formData: FormData) {
         last_ingest_at: new Date().toISOString(),
       })
       .eq('id', effectiveClientId)
-    if (updateIngestError && updateIngestError.code !== '42703') {
+    if (updateIngestError && !isMissingIngestTrackingColumns(updateIngestError)) {
       throw updateIngestError
     }
 

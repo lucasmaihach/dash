@@ -411,6 +411,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
     const byEnd = end ? r.date <= end : true
     return byTag && byCampaign && byStart && byEnd
   })
+  const hasRowsHiddenByFilters = rows.length > 0 && filtered.length === 0
 
   const totals = consolidate(filtered)
   const useMessageMetricsMode =
@@ -960,10 +961,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
         {isAdminUser ? (
           <form method="get" className="ds-admin-client-switch">
             {params.platform && params.platform !== 'meta' ? <input type="hidden" name="platform" value={params.platform} /> : null}
-            {params.report ? <input type="hidden" name="report" value={params.report} /> : null}
             {params.view ? <input type="hidden" name="view" value={params.view} /> : null}
-            {params.tag ? <input type="hidden" name="tag" value={params.tag} /> : null}
-            {params.campaign ? <input type="hidden" name="campaign" value={params.campaign} /> : null}
             {params.start ? <input type="hidden" name="start" value={params.start} /> : null}
             {params.end ? <input type="hidden" name="end" value={params.end} /> : null}
             <label htmlFor="admin_client_switch" className="ds-admin-client-switch-label">Cliente</label>
@@ -1160,6 +1158,15 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
             </div>
           </form>
         </section>
+
+        {hasRowsHiddenByFilters ? (
+          <section className="panel reveal d4">
+            <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: 13 }}>
+              Existem dados no período carregado, mas os filtros atuais não retornaram linhas.
+              Remova TAG/Campanha ou clique em Limpar.
+            </p>
+          </section>
+        ) : null}
 
         {selectedView === 'executivo' ? (
           <>

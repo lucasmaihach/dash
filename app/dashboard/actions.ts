@@ -103,7 +103,7 @@ export async function refreshClientDataAction(formData: FormData) {
   let ingestError: unknown = null
   try {
     const admin = getSupabaseAdminClient()
-    const { data: clientMeta } = await admin
+    const { data: clientMeta, error: clientMetaError } = await admin
       .from('clients')
       .select('last_ingest_until')
       .eq('id', effectiveClientId)
@@ -111,7 +111,9 @@ export async function refreshClientDataAction(formData: FormData) {
 
     const untilDate = new Date()
     const fallbackSinceDate = subtractDays(untilDate, 90)
-    const lastUntil = clientMeta?.last_ingest_until ? new Date(clientMeta.last_ingest_until) : null
+    const lastUntil = !clientMetaError && clientMeta?.last_ingest_until
+      ? new Date(clientMeta.last_ingest_until)
+      : null
     const sinceDate = lastUntil ? subtractDays(lastUntil, 1) : fallbackSinceDate
 
     const since = formatDateOnly(sinceDate)
@@ -119,7 +121,7 @@ export async function refreshClientDataAction(formData: FormData) {
 
     await runIngest(effectiveClientId, { mode: 'refresh', since, until })
 
-    await admin
+    const { error: updateIngestError } = await admin
       .from('clients')
       .update({
         last_ingest_since: since,
@@ -127,6 +129,9 @@ export async function refreshClientDataAction(formData: FormData) {
         last_ingest_at: new Date().toISOString(),
       })
       .eq('id', effectiveClientId)
+    if (updateIngestError && updateIngestError.code !== '42703') {
+      throw updateIngestError
+    }
 
     // Garante que a UI reflita os dados recém ingeridos mesmo se a revalidação
     // externa do script falhar (ex.: APP_BASE_URL/REVALIDATE_SECRET).

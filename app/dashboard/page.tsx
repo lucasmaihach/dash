@@ -290,11 +290,19 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   const dataClient = isAdminView ? getSupabaseAdminClient() : supabase
 
   // Busca nome da empresa do cliente (sempre via admin — já validado acima)
-  const { data: clientData } = await getSupabaseAdminClient()
+  let clientRes = await getSupabaseAdminClient()
     .from('clients')
     .select('name,last_ingest_at,last_ingest_since,last_ingest_until')
     .eq('id', effectiveClientId)
     .single()
+  if (clientRes.error?.code === '42703') {
+    clientRes = await getSupabaseAdminClient()
+      .from('clients')
+      .select('name')
+      .eq('id', effectiveClientId)
+      .single()
+  }
+  const clientData = clientRes.data
   const viewingClientName = clientData?.name || null
   const lastIngestAt = clientData?.last_ingest_at || null
   const lastIngestSince = clientData?.last_ingest_since || null

@@ -13,6 +13,7 @@ const META_LEVEL = process.env.META_LEVEL || 'campaign'
 const META_AD_LEVEL = process.env.META_AD_LEVEL || 'ad'
 const META_TIME_INCREMENT = process.env.META_TIME_INCREMENT || '1'
 const META_LIMIT = Number(process.env.META_LIMIT || '500')
+const META_FETCH_BUDGETS = process.env.META_FETCH_BUDGETS === 'true'
 const INGEST_ONLY_CLIENT_ID = (process.env.INGEST_ONLY_CLIENT_ID || '').trim()
 const INGEST_DATE_SINCE = (process.env.INGEST_DATE_SINCE || '').trim()
 const INGEST_DATE_UNTIL = (process.env.INGEST_DATE_UNTIL || '').trim()
@@ -859,25 +860,28 @@ async function main() {
       for (const adAccountId of clientAccounts) {
         try {
           const campaignBudgetById = new Map()
-          try {
-            const fetchedCampaignBudgets = await fetchCampaignDailyBudgets(accessToken, adAccountId)
-            for (const [campaignId, budget] of fetchedCampaignBudgets.entries()) {
-              campaignBudgetById.set(campaignId, budget)
-            }
-          } catch (err) {
-            console.warn(`  account ${adAccountId}: campaign budgets unavailable — ${err.message}`)
-          }
 
-          try {
-            const adsetBudgetByCampaignId = await fetchAdsetDailyBudgetsByCampaign(accessToken, adAccountId)
-            for (const [campaignId, adsetBudget] of adsetBudgetByCampaignId.entries()) {
-              const campaignBudget = campaignBudgetById.get(campaignId) || 0
-              if (campaignBudget <= 0 && adsetBudget > 0) {
-                campaignBudgetById.set(campaignId, adsetBudget)
+          if (META_FETCH_BUDGETS) {
+            try {
+              const fetchedCampaignBudgets = await fetchCampaignDailyBudgets(accessToken, adAccountId)
+              for (const [campaignId, budget] of fetchedCampaignBudgets.entries()) {
+                campaignBudgetById.set(campaignId, budget)
               }
+            } catch (err) {
+              console.log(`  account ${adAccountId}: campaign budgets skipped — ${err.message}`)
             }
-          } catch (err) {
-            console.warn(`  account ${adAccountId}: adset budgets unavailable — ${err.message}`)
+
+            try {
+              const adsetBudgetByCampaignId = await fetchAdsetDailyBudgetsByCampaign(accessToken, adAccountId)
+              for (const [campaignId, adsetBudget] of adsetBudgetByCampaignId.entries()) {
+                const campaignBudget = campaignBudgetById.get(campaignId) || 0
+                if (campaignBudget <= 0 && adsetBudget > 0) {
+                  campaignBudgetById.set(campaignId, adsetBudget)
+                }
+              }
+            } catch (err) {
+              console.log(`  account ${adAccountId}: adset budgets skipped — ${err.message}`)
+            }
           }
 
           // Sem breakdowns: garante um total único por campanha/dia com reach correto

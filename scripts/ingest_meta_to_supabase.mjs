@@ -70,6 +70,56 @@ function toMoneyFromMinorUnits(value) {
   return toNum(value) / 100
 }
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+function isRetryableMetaError(resp, payload) {
+  const code = Number(payload?.error?.code || 0)
+  const message = String(payload?.error?.message || '').toLowerCase()
+  return (
+    resp.status >= 500 ||
+    [1, 2, 4, 17, 32, 613].includes(code) ||
+    message.includes('temporarily unavailable') ||
+    message.includes('please retry') ||
+    message.includes('try again later')
+  )
+}
+
+async function fetchMetaJson(url, context, maxAttempts = 4) {
+  let lastMessage = ''
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    let resp
+    let payload
+
+    try {
+      resp = await fetch(url)
+      payload = await resp.json()
+    } catch (err) {
+      lastMessage = err instanceof Error ? err.message : String(err)
+      if (attempt < maxAttempts) {
+        await sleep(1000 * attempt)
+        continue
+      }
+      throw new Error(`${context}: ${lastMessage}`)
+    }
+
+    if (resp.ok && !payload.error) return payload
+
+    lastMessage = payload?.error?.message || `HTTP ${resp.status}`
+    if (attempt < maxAttempts && isRetryableMetaError(resp, payload)) {
+      console.warn(`${context}: temporary Meta API error, retry ${attempt}/${maxAttempts - 1} — ${lastMessage}`)
+      await sleep(1000 * attempt)
+      continue
+    }
+
+    throw new Error(`${context}: ${lastMessage}`)
+  }
+
+  throw new Error(`${context}: ${lastMessage || 'unknown Meta API error'}`)
+}
+
 function actionValue(actions, keys) {
   if (!Array.isArray(actions)) return 0
   for (const key of keys) {
@@ -435,14 +485,7 @@ async function fetchAdsWithCreatives(accessToken, adAccountId) {
   const results = []
 
   while (url) {
-    const resp = await fetch(url)
-    const payload = await resp.json()
-
-    if (!resp.ok || payload.error) {
-      const message = payload?.error?.message || `HTTP ${resp.status}`
-      throw new Error(`Meta API (creatives) error for account ${adAccountId}: ${message}`)
-    }
-
+    const payload = await fetchMetaJson(url, `Meta API (creatives) error for account ${adAccountId}`)
     for (const item of payload.data || []) results.push(item)
     url = payload?.paging?.next || null
   }
@@ -468,10 +511,10 @@ async function fetchAdPreviewUrl(accessToken, adId) {
   })
 
   const url = `https://graph.facebook.com/${META_API_VERSION}/${adId}/previews?${params.toString()}`
-  const resp = await fetch(url)
-  const payload = await resp.json()
-
-  if (!resp.ok || payload.error) {
+  let payload
+  try {
+    payload = await fetchMetaJson(url, `Meta API (preview) error for ad ${adId}`, 2)
+  } catch {
     return null
   }
 
@@ -519,14 +562,7 @@ async function fetchCampaignDailyBudgets(accessToken, adAccountId) {
   const budgetByCampaignId = new Map()
 
   while (url) {
-    const resp = await fetch(url)
-    const payload = await resp.json()
-
-    if (!resp.ok || payload.error) {
-      const message = payload?.error?.message || `HTTP ${resp.status}`
-      throw new Error(`Meta API (campaign budgets) error for account ${adAccountId}: ${message}`)
-    }
-
+    const payload = await fetchMetaJson(url, `Meta API (campaign budgets) error for account ${adAccountId}`)
     for (const item of payload.data || []) {
       const campaignId = item?.id ? String(item.id) : null
       if (!campaignId) continue
@@ -553,14 +589,7 @@ async function fetchAdsetDailyBudgetsByCampaign(accessToken, adAccountId) {
   const anyBudgetByCampaignId = new Map()
 
   while (url) {
-    const resp = await fetch(url)
-    const payload = await resp.json()
-
-    if (!resp.ok || payload.error) {
-      const message = payload?.error?.message || `HTTP ${resp.status}`
-      throw new Error(`Meta API (adset budgets) error for account ${adAccountId}: ${message}`)
-    }
-
+    const payload = await fetchMetaJson(url, `Meta API (adset budgets) error for account ${adAccountId}`)
     for (const item of payload.data || []) {
       const campaignId = item?.campaign_id ? String(item.campaign_id) : null
       if (!campaignId) continue
@@ -661,12 +690,7 @@ async function fetchMetaInsights(accessToken, adAccountId, options = {}) {
 
       let url = `${baseUrl}?${chunkParams.toString()}`
       while (url) {
-        const resp = await fetch(url)
-        const payload = await resp.json()
-        if (!resp.ok || payload.error) {
-          const message = payload?.error?.message || `HTTP ${resp.status}`
-          throw new Error(`Meta API error for account ${adAccountId}: ${message}`)
-        }
+        const payload = await fetchMetaJson(url, `Meta API error for account ${adAccountId}`)
         for (const item of payload.data || []) allRows.push(item)
         url = payload?.paging?.next || null
       }
@@ -706,12 +730,7 @@ async function fetchMetaInsights(accessToken, adAccountId, options = {}) {
 
       let url = `${baseUrl}?${chunkParams.toString()}`
       while (url) {
-        const resp = await fetch(url)
-        const payload = await resp.json()
-        if (!resp.ok || payload.error) {
-          const message = payload?.error?.message || `HTTP ${resp.status}`
-          throw new Error(`Meta API error for account ${adAccountId}: ${message}`)
-        }
+        const payload = await fetchMetaJson(url, `Meta API error for account ${adAccountId}`)
         for (const item of payload.data || []) allRows.push(item)
         url = payload?.paging?.next || null
       }
@@ -745,14 +764,7 @@ async function fetchMetaInsights(accessToken, adAccountId, options = {}) {
   const rows = []
 
   while (url) {
-    const resp = await fetch(url)
-    const payload = await resp.json()
-
-    if (!resp.ok || payload.error) {
-      const message = payload?.error?.message || `HTTP ${resp.status}`
-      throw new Error(`Meta API error for account ${adAccountId}: ${message}`)
-    }
-
+    const payload = await fetchMetaJson(url, `Meta API error for account ${adAccountId}`)
     for (const item of payload.data || []) {
       rows.push(item)
     }

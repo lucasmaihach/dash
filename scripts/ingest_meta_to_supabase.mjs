@@ -14,6 +14,7 @@ const META_AD_LEVEL = process.env.META_AD_LEVEL || 'ad'
 const META_TIME_INCREMENT = process.env.META_TIME_INCREMENT || '1'
 const META_LIMIT = Number(process.env.META_LIMIT || '500')
 const META_FETCH_BUDGETS = process.env.META_FETCH_BUDGETS === 'true'
+const META_SKIP_CREATIVES = process.env.META_SKIP_CREATIVES === 'true'
 const INGEST_ONLY_CLIENT_ID = (process.env.INGEST_ONLY_CLIENT_ID || '').trim()
 const INGEST_DATE_SINCE = (process.env.INGEST_DATE_SINCE || '').trim()
 const INGEST_DATE_UNTIL = (process.env.INGEST_DATE_UNTIL || '').trim()
@@ -155,13 +156,18 @@ const DEFAULT_FORM_SUBMIT_KEYS = [
   'offsite_conversion.fb_pixel_lead',
   'onsite_web_lead',
 ]
-const AGENCIA_SCHEDULE_MEETING_KEYS = [
+const YAY_SCHEDULE_MEETING_KEYS = [
   'invitee_meeting_scheduled',
+  'fb_pixel_custom.invitee_meeting_scheduled',
   'offsite_conversion.fb_pixel_custom.invitee_meeting_scheduled',
 ]
-const YAY_FORM_VIEW_KEYS = ['offsite_conversion.fb_pixel_custom.YFView']
-const YAY_FORM_START_KEYS = ['offsite_conversion.fb_pixel_custom.YFStart']
-const YAY_FORM_SUBMIT_KEYS = ['offsite_conversion.fb_pixel_custom.YFSubmit']
+const YAY_FORM_VIEW_KEYS = ['YFView', 'fb_pixel_custom.YFView', 'offsite_conversion.fb_pixel_custom.YFView']
+const YAY_FORM_START_KEYS = ['YFStart', 'fb_pixel_custom.YFStart', 'offsite_conversion.fb_pixel_custom.YFStart']
+const YAY_FORM_SUBMIT_KEYS = [
+  'YFSubmit',
+  'fb_pixel_custom.YFSubmit',
+  'offsite_conversion.fb_pixel_custom.YFSubmit',
+]
 
 function splitActionKeys(raw) {
   return String(raw || '')
@@ -179,9 +185,9 @@ function metricValueFromActions(actions, conversions, customKeys, defaultKeys) {
 }
 
 function getEffectiveLeadActionKey(clientId, configuredLeadActionKey) {
-  // Agência: "Leads/Reuniões Agendadas" deve usar o evento custom do Calendly.
-  if (clientId === AGENCIA_CLIENT_ID) {
-    const merged = [...AGENCIA_SCHEDULE_MEETING_KEYS, ...splitActionKeys(configuredLeadActionKey)]
+  // Clientes Yay Forms: "Reuniões Agendadas" deve usar o evento custom do Calendly/Yay.
+  if (YAY_FORMS_CLIENT_IDS.has(clientId)) {
+    const merged = [...YAY_SCHEDULE_MEETING_KEYS, ...splitActionKeys(configuredLeadActionKey)]
     return Array.from(new Set(merged)).join(',')
   }
   return configuredLeadActionKey || null
@@ -222,17 +228,18 @@ function buildEngagementFields(actions) {
 function buildCampaignMetricRow(clientId, raw, config, campaignBudgetById) {
   const actions = raw.actions || []
   const conversions = raw.conversions || []
+  const isYayFormsClient = YAY_FORMS_CLIENT_IDS.has(clientId)
   const linkClicks = actionValue(actions, ['link_click']) || toNum(raw.clicks)
   const landingPageViews = actionValue(actions, ['landing_page_view', 'omni_landing_page_view'])
   const campaignId = raw.campaign_id ? String(raw.campaign_id) : null
   const dailyBudget = campaignId ? (campaignBudgetById.get(campaignId) || 0) : 0
-  const leads = config.leadActionKey
+  const leads = isYayFormsClient ? 0 : config.leadActionKey
     ? metricValueFromActions(actions, conversions, config.leadActionKey, DEFAULT_LEAD_KEYS)
     : actionValue(actions, DEFAULT_LEAD_KEYS)
   const messages = metricValueFromActions(actions, conversions, config.messageActionKey, DEFAULT_MESSAGE_KEYS)
-  const viewForms = metricValueFromActions(actions, conversions, config.formViewActionKey, DEFAULT_VIEW_FORM_KEYS)
-  const formStarts = metricValueFromActions(actions, conversions, config.formStartActionKey, DEFAULT_FORM_START_KEYS)
-  const formSubmits = metricValueFromActions(actions, conversions, config.formSubmitActionKey, DEFAULT_FORM_SUBMIT_KEYS)
+  const viewForms = isYayFormsClient ? 0 : metricValueFromActions(actions, conversions, config.formViewActionKey, DEFAULT_VIEW_FORM_KEYS)
+  const formStarts = isYayFormsClient ? 0 : metricValueFromActions(actions, conversions, config.formStartActionKey, DEFAULT_FORM_START_KEYS)
+  const formSubmits = isYayFormsClient ? 0 : metricValueFromActions(actions, conversions, config.formSubmitActionKey, DEFAULT_FORM_SUBMIT_KEYS)
 
   // Sem breakdown: uma linha por campanha/dia com totais corretos da API.
   // Campos de placement removidos intencionalmente para evitar dupla contagem de reach.
@@ -260,15 +267,16 @@ function buildCampaignMetricRow(clientId, raw, config, campaignBudgetById) {
 function buildAdMetricRow(clientId, raw, config) {
   const actions = raw.actions || []
   const conversions = raw.conversions || []
+  const isYayFormsClient = YAY_FORMS_CLIENT_IDS.has(clientId)
   const linkClicks = actionValue(actions, ['link_click']) || toNum(raw.clicks)
   const landingPageViews = actionValue(actions, ['landing_page_view', 'omni_landing_page_view'])
-  const leads = config.leadActionKey
+  const leads = isYayFormsClient ? 0 : config.leadActionKey
     ? metricValueFromActions(actions, conversions, config.leadActionKey, DEFAULT_LEAD_KEYS)
     : actionValue(actions, DEFAULT_LEAD_KEYS)
   const messages = metricValueFromActions(actions, conversions, config.messageActionKey, DEFAULT_MESSAGE_KEYS)
-  const viewForms = metricValueFromActions(actions, conversions, config.formViewActionKey, DEFAULT_VIEW_FORM_KEYS)
-  const formStarts = metricValueFromActions(actions, conversions, config.formStartActionKey, DEFAULT_FORM_START_KEYS)
-  const formSubmits = metricValueFromActions(actions, conversions, config.formSubmitActionKey, DEFAULT_FORM_SUBMIT_KEYS)
+  const viewForms = isYayFormsClient ? 0 : metricValueFromActions(actions, conversions, config.formViewActionKey, DEFAULT_VIEW_FORM_KEYS)
+  const formStarts = isYayFormsClient ? 0 : metricValueFromActions(actions, conversions, config.formStartActionKey, DEFAULT_FORM_START_KEYS)
+  const formSubmits = isYayFormsClient ? 0 : metricValueFromActions(actions, conversions, config.formSubmitActionKey, DEFAULT_FORM_SUBMIT_KEYS)
 
   return {
     client_id: clientId,
@@ -651,6 +659,106 @@ async function fetchAdsetDailyBudgetsByCampaign(accessToken, adAccountId) {
   }
   return resolved
 }
+
+async function fetchAdPixels(accessToken, adAccountId) {
+  const params = new URLSearchParams({
+    access_token: accessToken,
+    fields: 'id,name',
+    limit: String(META_LIMIT),
+  })
+  const baseUrl = `https://graph.facebook.com/${META_API_VERSION}/act_${String(adAccountId).replace(/^act_/, '')}/adspixels`
+  let url = `${baseUrl}?${params.toString()}`
+  const pixels = []
+
+  while (url) {
+    const payload = await fetchMetaJson(url, `Meta API (pixels) error for account ${adAccountId}`)
+    for (const pixel of payload.data || []) {
+      if (pixel?.id) pixels.push(pixel)
+    }
+    url = payload?.paging?.next || null
+  }
+
+  return pixels
+}
+
+async function fetchPixelEventStats(accessToken, pixelId, eventName, requestedRange) {
+  const range = requestedRange || {
+    since: new Date(Date.now() - 30 * 86400 * 1000).toISOString().slice(0, 10),
+    until: new Date().toISOString().slice(0, 10),
+  }
+  const params = new URLSearchParams({
+    access_token: accessToken,
+    event: eventName,
+    aggregation: 'event',
+    start_time: String(Math.floor(new Date(`${range.since}T00:00:00.000Z`).getTime() / 1000)),
+    end_time: String(Math.floor(new Date(`${range.until}T23:59:59.000Z`).getTime() / 1000)),
+  })
+  let url = `https://graph.facebook.com/${META_API_VERSION}/${pixelId}/stats?${params.toString()}`
+  const countByDate = new Map()
+
+  while (url) {
+    const payload = await fetchMetaJson(url, `Meta API (pixel stats ${eventName}) error for pixel ${pixelId}`)
+    for (const bucket of payload.data || []) {
+      const date = String(bucket.start_time || '').slice(0, 10)
+      if (!date) continue
+      const count = (bucket.data || []).reduce((acc, item) => acc + toNum(item.count), 0)
+      countByDate.set(date, (countByDate.get(date) || 0) + count)
+    }
+    url = payload?.paging?.next || null
+  }
+
+  return countByDate
+}
+
+async function fetchYayPixelMetricRows(accessToken, adAccountId, clientId) {
+  const requestedRange = getRequestedDateRange()
+  const pixels = await fetchAdPixels(accessToken, adAccountId)
+  const byDate = new Map()
+  const eventMap = [
+    ['YFView', 'view_forms'],
+    ['YFStart', 'form_starts'],
+    ['YFSubmit', 'form_submits'],
+    ['invitee_meeting_scheduled', 'leads'],
+  ]
+
+  for (const pixel of pixels) {
+    for (const [eventName, field] of eventMap) {
+      const stats = await fetchPixelEventStats(accessToken, pixel.id, eventName, requestedRange)
+      for (const [date, count] of stats.entries()) {
+        if (!byDate.has(date)) {
+          byDate.set(date, {
+            client_id: clientId,
+            date,
+            campaign_name: '[Yay Forms] Eventos Pixel',
+            project_tag: 'Yay Forms',
+            daily_budget: 0,
+            reach: 0,
+            impressions: 0,
+            amount_spent: 0,
+            link_clicks: 0,
+            landing_page_views: 0,
+            leads: 0,
+            messages: 0,
+            view_forms: 0,
+            form_starts: 0,
+            form_submits: 0,
+            account_name: null,
+            follows: 0,
+            reactions: 0,
+            comments_count: 0,
+            shares: 0,
+            saves: 0,
+            post_engagement: 0,
+          })
+        }
+        const row = byDate.get(date)
+        row[field] = (row[field] || 0) + count
+      }
+    }
+  }
+
+  return [...byDate.values()]
+}
 // --------------------------------
 
 function getRequestedDateRange() {
@@ -922,6 +1030,16 @@ async function main() {
             breakdowns: [],
           })
           for (const row of adInsights) adRows.push(buildAdMetricRow(clientId, row, config))
+
+          if (YAY_FORMS_CLIENT_IDS.has(clientId)) {
+            try {
+              const yayPixelRows = await fetchYayPixelMetricRows(accessToken, adAccountId, clientId)
+              campaignRows.push(...yayPixelRows)
+              console.log(`  account ${adAccountId}: ${yayPixelRows.length} Yay Forms pixel day(s)`)
+            } catch (err) {
+              console.warn(`  account ${adAccountId}: Yay Forms pixel stats skipped — ${err.message}`)
+            }
+          }
         } catch (err) {
           insightsFailedAccounts++
           console.warn(`  account ${adAccountId}: insights fetch failed — ${err.message}`)
@@ -958,42 +1076,46 @@ async function main() {
 
       console.log(`client ${clientId}: upserted campaign=${campaignRows.length} ad=${upsertedAdRows}`)
 
-      // Criativos
-      console.log(`client ${clientId}: fetching creatives...`)
-      const creativeRows = []
-      for (const adAccountId of clientAccounts) {
-        try {
-          const ads = await fetchAdsWithCreatives(accessToken, adAccountId)
-          let previewsRecovered = 0
+      if (META_SKIP_CREATIVES) {
+        console.log(`client ${clientId}: creatives skipped by META_SKIP_CREATIVES=true`)
+      } else {
+        // Criativos
+        console.log(`client ${clientId}: fetching creatives...`)
+        const creativeRows = []
+        for (const adAccountId of clientAccounts) {
+          try {
+            const ads = await fetchAdsWithCreatives(accessToken, adAccountId)
+            let previewsRecovered = 0
 
-          for (const ad of ads) {
-            const row = buildCreativeRow(clientId, ad)
+            for (const ad of ads) {
+              const row = buildCreativeRow(clientId, ad)
 
-            // Fallback para link público: busca preview do anúncio quando a API não retorna
-            // ad_snapshot_url/link_url diretamente no endpoint de ads.
-            if (!row.ad_snapshot_url && row.ad_id) {
-              const previewUrl = await fetchAdPreviewUrl(accessToken, row.ad_id)
-              if (previewUrl) {
-                row.ad_snapshot_url = previewUrl
-                previewsRecovered++
+              // Fallback para link público: busca preview do anúncio quando a API não retorna
+              // ad_snapshot_url/link_url diretamente no endpoint de ads.
+              if (!row.ad_snapshot_url && row.ad_id) {
+                const previewUrl = await fetchAdPreviewUrl(accessToken, row.ad_id)
+                if (previewUrl) {
+                  row.ad_snapshot_url = previewUrl
+                  previewsRecovered++
+                }
               }
+
+              if (row.thumbnail_url || row.image_url || row.video_id) creativeRows.push(row)
             }
 
-            if (row.thumbnail_url || row.image_url || row.video_id) creativeRows.push(row)
+            console.log(`  account ${adAccountId}: ${ads.length} ads with creatives (${previewsRecovered} preview links recovered)`)
+          } catch (err) {
+            console.warn(`  account ${adAccountId}: creatives fetch failed — ${err.message}`)
           }
-
-          console.log(`  account ${adAccountId}: ${ads.length} ads with creatives (${previewsRecovered} preview links recovered)`)
-        } catch (err) {
-          console.warn(`  account ${adAccountId}: creatives fetch failed — ${err.message}`)
         }
-      }
 
-      if (creativeRows.length > 0) {
-        await supabaseUpsert('meta_ad_creatives', creativeRows, 'client_id,ad_id')
-        console.log(`client ${clientId}: upserted ${creativeRows.length} creatives`)
-        totalSent += creativeRows.length
-      } else {
-        console.log(`client ${clientId}: no creatives with media found`)
+        if (creativeRows.length > 0) {
+          await supabaseUpsert('meta_ad_creatives', creativeRows, 'client_id,ad_id')
+          console.log(`client ${clientId}: upserted ${creativeRows.length} creatives`)
+          totalSent += creativeRows.length
+        } else {
+          console.log(`client ${clientId}: no creatives with media found`)
+        }
       }
 
     await revalidateClientCache(clientId)

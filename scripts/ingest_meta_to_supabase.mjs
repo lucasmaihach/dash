@@ -18,6 +18,8 @@ const INGEST_ONLY_CLIENT_ID = (process.env.INGEST_ONLY_CLIENT_ID || '').trim()
 const INGEST_DATE_SINCE = (process.env.INGEST_DATE_SINCE || '').trim()
 const INGEST_DATE_UNTIL = (process.env.INGEST_DATE_UNTIL || '').trim()
 const AGENCIA_CLIENT_ID = 'b8724c80-9c00-48ce-b9e4-245ba9a69a20'
+const WEDCLASS_CLIENT_ID = '08c2e472-19a1-4b64-b994-f1e2e1d68177'
+const YAY_FORMS_CLIENT_IDS = new Set([AGENCIA_CLIENT_ID, WEDCLASS_CLIENT_ID])
 // META_BREAKDOWNS foi removido da ingestão de campanhas.
 // Breakdowns inflavam reach/impressions (o mesmo usuário contado por placement).
 // A API retorna totais corretos sem breakdowns. Mantido aqui apenas como referência.
@@ -157,6 +159,9 @@ const AGENCIA_SCHEDULE_MEETING_KEYS = [
   'invitee_meeting_scheduled',
   'offsite_conversion.fb_pixel_custom.invitee_meeting_scheduled',
 ]
+const YAY_FORM_VIEW_KEYS = ['offsite_conversion.fb_pixel_custom.YFView']
+const YAY_FORM_START_KEYS = ['offsite_conversion.fb_pixel_custom.YFStart']
+const YAY_FORM_SUBMIT_KEYS = ['offsite_conversion.fb_pixel_custom.YFSubmit']
 
 function splitActionKeys(raw) {
   return String(raw || '')
@@ -180,6 +185,25 @@ function getEffectiveLeadActionKey(clientId, configuredLeadActionKey) {
     return Array.from(new Set(merged)).join(',')
   }
   return configuredLeadActionKey || null
+}
+
+function mergeActionKeys(...groups) {
+  return Array.from(new Set(groups.flatMap((group) => splitActionKeys(group)))).join(',')
+}
+
+function applyClientMetricConfig(clientId, config) {
+  const resolved = {
+    ...config,
+    leadActionKey: getEffectiveLeadActionKey(clientId, config.leadActionKey),
+  }
+
+  if (YAY_FORMS_CLIENT_IDS.has(clientId)) {
+    resolved.formViewActionKey = mergeActionKeys(config.formViewActionKey, YAY_FORM_VIEW_KEYS.join(','))
+    resolved.formStartActionKey = mergeActionKeys(config.formStartActionKey, YAY_FORM_START_KEYS.join(','))
+    resolved.formSubmitActionKey = mergeActionKeys(config.formSubmitActionKey, YAY_FORM_SUBMIT_KEYS.join(','))
+  }
+
+  return resolved
 }
 
 function buildEngagementFields(actions) {
@@ -849,7 +873,7 @@ async function main() {
         formStartActionKey: null,
         formSubmitActionKey: null,
       }
-      config.leadActionKey = getEffectiveLeadActionKey(clientId, config.leadActionKey)
+      Object.assign(config, applyClientMetricConfig(clientId, config))
       if (config.leadActionKey) console.log(`client ${clientId}: using custom lead action key "${config.leadActionKey}"`)
       if (config.formViewActionKey || config.formStartActionKey || config.formSubmitActionKey || config.messageActionKey) {
         console.log(

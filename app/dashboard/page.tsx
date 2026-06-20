@@ -139,7 +139,9 @@ type AdminClientOption = {
 const REPORT_TIMEZONE = process.env.REPORT_TIMEZONE || 'America/Sao_Paulo'
 const IOX_CLIENT_ID = 'd9cc196d-f8d6-4042-9da4-6fe93a31b215'
 const AGENCIA_CLIENT_ID = 'b8724c80-9c00-48ce-b9e4-245ba9a69a20'
+const WEDCLASS_CLIENT_ID = '08c2e472-19a1-4b64-b994-f1e2e1d68177'
 const VANDRE_CLIENT_ID = '0976f86f-7183-41f6-9211-cbe6ecfc80ed'
+const YAY_FORMS_CLIENT_IDS = new Set([AGENCIA_CLIENT_ID, WEDCLASS_CLIENT_ID])
 
 function dateKeyInTimezone(value: string | null | undefined, timezone: string): string {
   if (!value) return ''
@@ -331,7 +333,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
 
   // Regras de negócio por cliente:
   // - IOX: visão RD
-  // - Agência: visão de funil de formulário
+  // - Agência/Wedclass: visão de funil de formulário Yay
   // - Demais: visão padrão
   const { data: rdCred } = await getSupabaseAdminClient()
     .from('client_rd_credentials')
@@ -340,7 +342,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
     .eq('is_active', true)
     .maybeSingle()
   const useRdMode = effectiveClientId === IOX_CLIENT_ID && !!rdCred
-  const useAgencyFormMode = effectiveClientId === AGENCIA_CLIENT_ID
+  const useAgencyFormMode = YAY_FORMS_CLIENT_IDS.has(effectiveClientId)
   const useMessageCampaignMode = effectiveClientId === VANDRE_CLIENT_ID
   const agencyLeadLabel = 'Reuniões Agendadas'
 

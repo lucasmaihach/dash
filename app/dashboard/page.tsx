@@ -100,6 +100,16 @@ type ProductReport = {
   campaign_filter: string | null
 }
 
+type ClientData = {
+  name?: string | null
+  last_ingest_at?: string | null
+  last_ingest_since?: string | null
+  last_ingest_until?: string | null
+  form_view_action_key?: string | null
+  form_start_action_key?: string | null
+  form_submit_action_key?: string | null
+}
+
 type AdMetricRow = MetricRow & {
   ad_name: string | null
   adset_name: string | null
@@ -142,6 +152,7 @@ const AGENCIA_CLIENT_ID = 'b8724c80-9c00-48ce-b9e4-245ba9a69a20'
 const WEDCLASS_CLIENT_ID = '08c2e472-19a1-4b64-b994-f1e2e1d68177'
 const VANDRE_CLIENT_ID = '0976f86f-7183-41f6-9211-cbe6ecfc80ed'
 const YAY_FORMS_CLIENT_IDS = new Set([AGENCIA_CLIENT_ID, WEDCLASS_CLIENT_ID])
+const YAY_FORMS_CLIENT_NAMES = new Set(['agência', 'agencia', 'wedclass'])
 
 function dateKeyInTimezone(value: string | null | undefined, timezone: string): string {
   if (!value) return ''
@@ -294,7 +305,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   // Busca nome da empresa do cliente (sempre via admin — já validado acima)
   let clientRes = await getSupabaseAdminClient()
     .from('clients')
-    .select('name,last_ingest_at,last_ingest_since,last_ingest_until')
+    .select('name,last_ingest_at,last_ingest_since,last_ingest_until,form_view_action_key,form_start_action_key,form_submit_action_key')
     .eq('id', effectiveClientId)
     .single()
   if (clientRes.error?.code === '42703') {
@@ -304,7 +315,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
       .eq('id', effectiveClientId)
       .single()
   }
-  const clientData = clientRes.data
+  const clientData = clientRes.data as ClientData | null
   const viewingClientName = clientData?.name || null
   const lastIngestAt = clientData?.last_ingest_at || null
   const lastIngestSince = clientData?.last_ingest_since || null
@@ -342,7 +353,16 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
     .eq('is_active', true)
     .maybeSingle()
   const useRdMode = effectiveClientId === IOX_CLIENT_ID && !!rdCred
-  const useAgencyFormMode = YAY_FORMS_CLIENT_IDS.has(effectiveClientId)
+  const normalizedClientName = (viewingClientName || '').trim().toLowerCase()
+  const hasYayFormConfig = Boolean(
+    clientData?.form_view_action_key ||
+    clientData?.form_start_action_key ||
+    clientData?.form_submit_action_key
+  )
+  const useAgencyFormMode =
+    YAY_FORMS_CLIENT_IDS.has(effectiveClientId) ||
+    YAY_FORMS_CLIENT_NAMES.has(normalizedClientName) ||
+    hasYayFormConfig
   const useMessageCampaignMode = effectiveClientId === VANDRE_CLIENT_ID
   const agencyLeadLabel = 'Reuniões Agendadas'
 

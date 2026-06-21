@@ -11,6 +11,7 @@ type IngestOptions = {
   mode?: IngestMode
   since?: string
   until?: string
+  skipCreatives?: boolean
 }
 
 function formatDateOnly(date: Date) {
@@ -82,7 +83,12 @@ export async function runIngest(clientId?: string, options: IngestOptions = {}) 
 
   // Roda Meta
   try {
-    await runScript('ingest_meta_to_supabase.mjs', clientId, options)
+    await runScript(
+      'ingest_meta_to_supabase.mjs',
+      clientId,
+      options,
+      options.skipCreatives ? { META_SKIP_CREATIVES: 'true' } : {}
+    )
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     errors.push(`Meta: ${message}`)

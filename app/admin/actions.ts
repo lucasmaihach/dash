@@ -165,7 +165,8 @@ export async function refreshClientAction(formData: FormData) {
       .maybeSingle()
 
     const untilDate = new Date()
-    const fallbackSinceDate = subtractDays(untilDate, 90)
+    const hasIngestTracking = !clientMetaError || !isMissingIngestTrackingColumns(clientMetaError)
+    const fallbackSinceDate = subtractDays(untilDate, hasIngestTracking ? 90 : 7)
     const lastUntil = !clientMetaError && clientMeta?.last_ingest_until
       ? new Date(clientMeta.last_ingest_until)
       : null
@@ -173,7 +174,7 @@ export async function refreshClientAction(formData: FormData) {
     const since = formatDateOnly(sinceDate)
     const until = formatDateOnly(untilDate)
 
-    await runIngest(clientId, { mode: 'refresh', since, until })
+    await runIngest(clientId, { mode: 'refresh', since, until, skipCreatives: true })
     const { error: updateIngestError } = await admin
       .from('clients')
       .update({

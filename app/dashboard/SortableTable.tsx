@@ -10,21 +10,26 @@ export type TableColumn = {
 
 type Props = {
   columns: TableColumn[]
-  rows: Record<string, string>[]
+  rows: Record<string, string | number | null | undefined>[]
   firstColStyle?: React.CSSProperties
   pageSize?: number
 }
 
+function toCellString(value: string | number | null | undefined): string {
+  return value === null || value === undefined ? '' : String(value)
+}
+
 // Converte valores formatados em pt-BR para número comparável
-function toNum(v: string): number {
+function toNum(value: string | number | null | undefined): number {
+  const v = toCellString(value)
   const n = parseFloat(
     v.replace(/R\$\s*/g, '').replace(/%/g, '').replace(/\./g, '').replace(',', '.').trim()
   )
   return isNaN(n) ? -Infinity : n
 }
 
-function renderCellValue(column: TableColumn, value: string | undefined) {
-  const cellValue = value ?? ''
+function renderCellValue(column: TableColumn, value: string | number | null | undefined) {
+  const cellValue = toCellString(value)
 
   if (column.type === 'link') {
     if (!cellValue || cellValue === '—') return '—'
@@ -56,13 +61,15 @@ export function SortableTable({ columns, rows, firstColStyle, pageSize = 20 }: P
 
   const sorted = sortKey
     ? [...rows].sort((a, b) => {
-        const av = toNum(a[sortKey] ?? '')
-        const bv = toNum(b[sortKey] ?? '')
+        const av = toNum(a[sortKey])
+        const bv = toNum(b[sortKey])
         // fallback para sort alfabético na coluna de nome
         if (av === -Infinity && bv === -Infinity) {
+          const aValue = toCellString(a[sortKey])
+          const bValue = toCellString(b[sortKey])
           return sortDir === 'desc'
-            ? (b[sortKey] ?? '').localeCompare(a[sortKey] ?? '')
-            : (a[sortKey] ?? '').localeCompare(b[sortKey] ?? '')
+            ? bValue.localeCompare(aValue)
+            : aValue.localeCompare(bValue)
         }
         return sortDir === 'desc' ? bv - av : av - bv
       })

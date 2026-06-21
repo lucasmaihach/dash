@@ -24,7 +24,12 @@ export type DayRow = {
 type SortKey = keyof Omit<DayRow, 'totals'>
 type SortDir = 'desc' | 'asc'
 
-function toNum(v: string): number {
+function toCellString(value: string | number | null | undefined): string {
+  return value === null || value === undefined ? '' : String(value)
+}
+
+function toNum(value: string | number | null | undefined): number {
+  const v = toCellString(value)
   const n = parseFloat(
     v.replace(/R\$\s*/g, '').replace(/%/g, '').replace(/\./g, '').replace(',', '.').trim()
   )
@@ -93,12 +98,14 @@ export function DailySection({ days, clientId, tag, campaignFilter, useMessageMe
   }
 
   const sorted = [...days].sort((a, b) => {
-    const av = toNum(a[sortKey] ?? '')
-    const bv = toNum(b[sortKey] ?? '')
+    const av = toNum(a[sortKey])
+    const bv = toNum(b[sortKey])
     if (av === -Infinity && bv === -Infinity) {
+      const aValue = toCellString(a[sortKey])
+      const bValue = toCellString(b[sortKey])
       return sortDir === 'desc'
-        ? (b[sortKey] ?? '').localeCompare(a[sortKey] ?? '')
-        : (a[sortKey] ?? '').localeCompare(b[sortKey] ?? '')
+        ? bValue.localeCompare(aValue)
+        : aValue.localeCompare(bValue)
     }
     return sortDir === 'desc' ? bv - av : av - bv
   })

@@ -233,13 +233,17 @@ function buildCampaignMetricRow(clientId, raw, config, campaignBudgetById) {
   const landingPageViews = actionValue(actions, ['landing_page_view', 'omni_landing_page_view'])
   const campaignId = raw.campaign_id ? String(raw.campaign_id) : null
   const dailyBudget = campaignId ? (campaignBudgetById.get(campaignId) || 0) : 0
-  const leads = isYayFormsClient ? 0 : config.leadActionKey
-    ? metricValueFromActions(actions, conversions, config.leadActionKey, DEFAULT_LEAD_KEYS)
+  const leadDefaultKeys = isYayFormsClient ? [] : DEFAULT_LEAD_KEYS
+  const viewFormDefaultKeys = isYayFormsClient ? [] : DEFAULT_VIEW_FORM_KEYS
+  const formStartDefaultKeys = isYayFormsClient ? [] : DEFAULT_FORM_START_KEYS
+  const formSubmitDefaultKeys = isYayFormsClient ? [] : DEFAULT_FORM_SUBMIT_KEYS
+  const leads = config.leadActionKey
+    ? metricValueFromActions(actions, conversions, config.leadActionKey, leadDefaultKeys)
     : actionValue(actions, DEFAULT_LEAD_KEYS)
   const messages = metricValueFromActions(actions, conversions, config.messageActionKey, DEFAULT_MESSAGE_KEYS)
-  const viewForms = isYayFormsClient ? 0 : metricValueFromActions(actions, conversions, config.formViewActionKey, DEFAULT_VIEW_FORM_KEYS)
-  const formStarts = isYayFormsClient ? 0 : metricValueFromActions(actions, conversions, config.formStartActionKey, DEFAULT_FORM_START_KEYS)
-  const formSubmits = isYayFormsClient ? 0 : metricValueFromActions(actions, conversions, config.formSubmitActionKey, DEFAULT_FORM_SUBMIT_KEYS)
+  const viewForms = metricValueFromActions(actions, conversions, config.formViewActionKey, viewFormDefaultKeys)
+  const formStarts = metricValueFromActions(actions, conversions, config.formStartActionKey, formStartDefaultKeys)
+  const formSubmits = metricValueFromActions(actions, conversions, config.formSubmitActionKey, formSubmitDefaultKeys)
 
   // Sem breakdown: uma linha por campanha/dia com totais corretos da API.
   // Campos de placement removidos intencionalmente para evitar dupla contagem de reach.
@@ -270,13 +274,17 @@ function buildAdMetricRow(clientId, raw, config) {
   const isYayFormsClient = YAY_FORMS_CLIENT_IDS.has(clientId)
   const linkClicks = actionValue(actions, ['link_click']) || toNum(raw.clicks)
   const landingPageViews = actionValue(actions, ['landing_page_view', 'omni_landing_page_view'])
-  const leads = isYayFormsClient ? 0 : config.leadActionKey
-    ? metricValueFromActions(actions, conversions, config.leadActionKey, DEFAULT_LEAD_KEYS)
+  const leadDefaultKeys = isYayFormsClient ? [] : DEFAULT_LEAD_KEYS
+  const viewFormDefaultKeys = isYayFormsClient ? [] : DEFAULT_VIEW_FORM_KEYS
+  const formStartDefaultKeys = isYayFormsClient ? [] : DEFAULT_FORM_START_KEYS
+  const formSubmitDefaultKeys = isYayFormsClient ? [] : DEFAULT_FORM_SUBMIT_KEYS
+  const leads = config.leadActionKey
+    ? metricValueFromActions(actions, conversions, config.leadActionKey, leadDefaultKeys)
     : actionValue(actions, DEFAULT_LEAD_KEYS)
   const messages = metricValueFromActions(actions, conversions, config.messageActionKey, DEFAULT_MESSAGE_KEYS)
-  const viewForms = isYayFormsClient ? 0 : metricValueFromActions(actions, conversions, config.formViewActionKey, DEFAULT_VIEW_FORM_KEYS)
-  const formStarts = isYayFormsClient ? 0 : metricValueFromActions(actions, conversions, config.formStartActionKey, DEFAULT_FORM_START_KEYS)
-  const formSubmits = isYayFormsClient ? 0 : metricValueFromActions(actions, conversions, config.formSubmitActionKey, DEFAULT_FORM_SUBMIT_KEYS)
+  const viewForms = metricValueFromActions(actions, conversions, config.formViewActionKey, viewFormDefaultKeys)
+  const formStarts = metricValueFromActions(actions, conversions, config.formStartActionKey, formStartDefaultKeys)
+  const formSubmits = metricValueFromActions(actions, conversions, config.formSubmitActionKey, formSubmitDefaultKeys)
 
   return {
     client_id: clientId,
@@ -493,6 +501,26 @@ async function supabaseUpsert(table, rows, onConflict) {
   }
 
   throw new Error(`Supabase UPSERT failed (${resp.status}): ${errorText}`)
+}
+
+async function supabaseDeleteCampaignByName(clientId, campaignName) {
+  const params = new URLSearchParams({
+    client_id: `eq.${clientId}`,
+    campaign_name: `eq.${campaignName}`,
+  })
+
+  const resp = await fetch(`${SUPABASE_URL}/rest/v1/meta_daily_campaign_metrics?${params.toString()}`, {
+    method: 'DELETE',
+    headers: {
+      apikey: SUPABASE_SERVICE_ROLE_KEY,
+      Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+      Prefer: 'return=minimal',
+    },
+  })
+
+  if (!resp.ok) {
+    throw new Error(`Supabase DELETE failed (${resp.status}): ${await resp.text()}`)
+  }
 }
 
 // ---------- creatives ----------
@@ -988,6 +1016,10 @@ async function main() {
           `client ${clientId}: custom keys message="${config.messageActionKey || '-'}" view="${config.formViewActionKey || '-'}" start="${config.formStartActionKey || '-'}" submit="${config.formSubmitActionKey || '-'}"`
         )
       }
+      if (YAY_FORMS_CLIENT_IDS.has(clientId)) {
+        await supabaseDeleteCampaignByName(clientId, '[Yay Forms] Eventos Pixel')
+        console.log(`client ${clientId}: removed legacy raw Yay Forms pixel rows`)
+      }
 
       for (const adAccountId of clientAccounts) {
         try {
@@ -1030,16 +1062,6 @@ async function main() {
             breakdowns: [],
           })
           for (const row of adInsights) adRows.push(buildAdMetricRow(clientId, row, config))
-
-          if (YAY_FORMS_CLIENT_IDS.has(clientId)) {
-            try {
-              const yayPixelRows = await fetchYayPixelMetricRows(accessToken, adAccountId, clientId)
-              campaignRows.push(...yayPixelRows)
-              console.log(`  account ${adAccountId}: ${yayPixelRows.length} Yay Forms pixel day(s)`)
-            } catch (err) {
-              console.warn(`  account ${adAccountId}: Yay Forms pixel stats skipped — ${err.message}`)
-            }
-          }
         } catch (err) {
           insightsFailedAccounts++
           console.warn(`  account ${adAccountId}: insights fetch failed — ${err.message}`)

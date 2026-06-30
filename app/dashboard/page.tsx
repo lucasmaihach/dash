@@ -9,6 +9,7 @@ import { DailySection, type DayRow } from './DailySection'
 import { SortableTable } from './SortableTable'
 import { AdCreativesGrid, type CreativeCard } from './AdCreativesGrid'
 import { SubmitButton } from '@/app/components/SubmitButton'
+import { WeeklyComparisonSection, type WeeklyMetric, type WeeklyTrendSeries, type WeeklyDayPoint } from './WeeklyComparisonSection'
 
 export const dynamic = 'force-dynamic'
 
@@ -912,6 +913,100 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
     }
   }
 
+  // --- Weekly comparison (agency mode only) ---
+  // Weeks run Sun-Sat. Current week = Sun of this week → today. Prev = previous Sun-Sat.
+  let weeklyComparison: WeeklyMetric[] = []
+  let weeklyTrends: WeeklyTrendSeries[] = []
+  let currentWeekLabel = ''
+  let prevWeekLabel = ''
+
+  if (useAgencyFormMode && selectedPlatform === 'meta') {
+    // Helper: add days to a YYYY-MM-DD string using UTC arithmetic to avoid DST issues
+    function addDaysToDateStr(dateStr: string, days: number): string {
+      const [y, m, d] = dateStr.split('-').map(Number)
+      const dt = new Date(Date.UTC(y, m - 1, d + days))
+      return dt.toISOString().slice(0, 10)
+    }
+
+    const todayStr = new Intl.DateTimeFormat('sv-SE', { timeZone: REPORT_TIMEZONE }).format(new Date())
+    const dowStr = new Intl.DateTimeFormat('en-US', { timeZone: REPORT_TIMEZONE, weekday: 'short' }).format(new Date())
+    const DOW_MAP: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 }
+    const dow = DOW_MAP[dowStr] ?? 0
+    const currSunStr = addDaysToDateStr(todayStr, -dow)
+    const prevSunStr = addDaysToDateStr(currSunStr, -7)
+    const prevSatStr = addDaysToDateStr(currSunStr, -1)
+
+    const fmtWeekLabel = (a: string, b: string) => {
+      const fa = a.split('-').reverse().slice(0, 2).join('/')
+      const fb = b.split('-').reverse().slice(0, 2).join('/')
+      return `${fa} – ${fb}`
+    }
+    currentWeekLabel = fmtWeekLabel(currSunStr, todayStr)
+    prevWeekLabel = fmtWeekLabel(prevSunStr, prevSatStr)
+
+    // Use all rows (ignore date filter) but apply text filters
+    const textFilteredAll = rows.filter((r) => {
+      const byTag = activeTagFilter
+        ? (r.project_tag || '').toLowerCase().includes(activeTagFilter.toLowerCase()) ||
+          (r.campaign_name || '').toLowerCase().includes(activeTagFilter.toLowerCase())
+        : true
+      const byCamp = activeCampaignFilter
+        ? (r.campaign_name || '').toLowerCase().includes(activeCampaignFilter.toLowerCase())
+        : true
+      return byTag && byCamp
+    })
+
+    const currWeekRows = textFilteredAll.filter((r) => r.date >= currSunStr && r.date <= todayStr)
+    const prevWeekRows = textFilteredAll.filter((r) => r.date >= prevSunStr && r.date <= prevSatStr)
+    const cw = consolidate(currWeekRows)
+    const pw = consolidate(prevWeekRows)
+
+    weeklyComparison = [
+      { label: 'CPC (Custo por Clique)', current: cw.cpc, prev: pw.cpc, format: 'money' },
+      { label: 'CTR', current: cw.ctr, prev: pw.ctr, format: 'pct' },
+      { label: 'Custo por Viu Forms', current: cw.cost_per_view_form, prev: pw.cost_per_view_form, format: 'money' },
+      { label: 'Custo por Iniciou Forms', current: cw.cost_per_form_start, prev: pw.cost_per_form_start, format: 'money' },
+      { label: 'Custo por Enviou Forms', current: cw.cost_per_form_submit, prev: pw.cost_per_form_submit, format: 'money' },
+      { label: 'Custo por Reunião Agendada', current: cw.cpl, prev: pw.cpl, format: 'money' },
+    ]
+
+    const metricExtractors: Array<{ label: string; format: 'money' | 'pct'; fn: (t: ReturnType<typeof consolidate>) => number }> = [
+      { label: 'CPC', format: 'money', fn: (t) => t.cpc },
+      { label: 'CTR', format: 'pct', fn: (t) => t.ctr },
+      { label: 'Custo por Viu Forms', format: 'money', fn: (t) => t.cost_per_view_form },
+      { label: 'Custo por Iniciou Forms', format: 'money', fn: (t) => t.cost_per_form_start },
+      { label: 'Custo por Enviou Forms', format: 'money', fn: (t) => t.cost_per_form_submit },
+      { label: 'Custo por Reunião Agendada', format: 'money', fn: (t) => t.cpl },
+    ]
+
+    const byDayAll = byDay(textFilteredAll)
+    const dayMap = new Map(byDayAll.map((d) => [d.date, d.totals]))
+
+    function buildDayPoints(startStr: string, endStr: string): WeeklyDayPoint[] {
+      const pts: WeeklyDayPoint[] = []
+      const cur = new Date(startStr)
+      const end = new Date(endStr)
+      while (cur <= end) {
+        const ds = cur.toISOString().slice(0, 10)
+        pts.push({ date: ds, value: 0 })
+        cur.setDate(cur.getDate() + 1)
+      }
+      return pts
+    }
+
+    weeklyTrends = metricExtractors.map(({ label, format, fn }) => {
+      const prevPts = buildDayPoints(prevSunStr, prevSatStr).map((p) => ({
+        date: p.date,
+        value: dayMap.has(p.date) ? fn(dayMap.get(p.date)!) : 0,
+      }))
+      const currPts = buildDayPoints(currSunStr, todayStr).map((p) => ({
+        date: p.date,
+        value: dayMap.has(p.date) ? fn(dayMap.get(p.date)!) : 0,
+      }))
+      return { label, format, prevWeek: prevPts, currentWeek: currPts } satisfies WeeklyTrendSeries
+    })
+  }
+
   const baseHref: Search = {
     platform: selectedPlatform !== 'meta' ? selectedPlatform : undefined,
     report: selectedReport?.id,
@@ -1282,6 +1377,14 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
               <p style={{ marginTop: 8, color: 'var(--text-muted)' }}>Conversão total do funil: {fPct(totalFunnelRate)}</p>
             </section>
 
+            {useAgencyFormMode && weeklyComparison.length > 0 ? (
+              <WeeklyComparisonSection
+                currentWeekLabel={currentWeekLabel}
+                prevWeekLabel={prevWeekLabel}
+                comparison={weeklyComparison}
+                trends={weeklyTrends}
+              />
+            ) : null}
 
             <section className="panel reveal d6">
               <h2>C) Visão por Campanha</h2>

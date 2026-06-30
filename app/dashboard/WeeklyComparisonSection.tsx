@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, type CSSProperties } from 'react'
+import { useState, type CSSProperties, type MouseEvent as ReactMouseEvent } from 'react'
 
 export type WeeklyDailyPoint = {
   date: string
@@ -180,27 +180,32 @@ function TrendChartForMetric({
   prevLabel: string
   currentLabel: string
 }) {
+  const [hoverIndex, setHoverIndex] = useState<number | null>(null)
+
   const prevData = prevPoints.map((p) => ({ date: p.date, value: metricForPoint(p, metricKey) }))
   const currData = currPoints.map((p) => ({ date: p.date, value: metricForPoint(p, metricKey) }))
-  const allPoints = [...prevData, ...currData]
-  const values = allPoints.map((p) => p.value)
+  const maxLen = Math.max(prevData.length, currData.length, 1)
+  const values = [...prevData, ...currData].map((p) => p.value)
   const minVal = Math.min(...values, 0)
   const maxVal = Math.max(...values, 0.0001)
   const range = maxVal - minVal || 1
 
-  const W = 360
-  const H = 110
-  const PAD_X = 6
-  const PAD_TOP = 26
-  const PAD_BOTTOM = 18
-  const showLabels = allPoints.length > 0 && allPoints.length <= 16
+  const W = 380
+  const H = 160
+  const PAD_X = 10
+  const PAD_TOP = 18
+  const PAD_BOTTOM = 36
+  const plotH = H - PAD_TOP - PAD_BOTTOM
+
+  // Show at most ~6 x-axis labels so dates never overlap.
+  const labelStep = Math.max(1, Math.ceil(maxLen / 6))
 
   function toX(index: number, total: number) {
     if (total <= 1) return PAD_X
     return PAD_X + (index / (total - 1)) * (W - PAD_X * 2)
   }
   function toY(value: number) {
-    return PAD_TOP + ((maxVal - value) / range) * (H - PAD_TOP - PAD_BOTTOM)
+    return PAD_TOP + ((maxVal - value) / range) * plotH
   }
 
   function makePath(points: Array<{ date: string; value: number }>) {
@@ -217,11 +222,31 @@ function TrendChartForMetric({
   const prevPath = makePath(prevData)
   const currPath = makePath(currData)
 
+  function handleMove(e: ReactMouseEvent<SVGSVGElement>) {
+    const rect = e.currentTarget.getBoundingClientRect()
+    const relX = ((e.clientX - rect.left) / rect.width) * W
+    const idx = Math.round(((relX - PAD_X) / (W - PAD_X * 2)) * (maxLen - 1))
+    setHoverIndex(Math.min(Math.max(idx, 0), maxLen - 1))
+  }
+
+  const hoverPrev = hoverIndex !== null ? prevData[hoverIndex] : undefined
+  const hoverCurr = hoverIndex !== null ? currData[hoverIndex] : undefined
+  const hoverX = hoverIndex !== null ? toX(hoverIndex, maxLen) : null
+
   return (
     <div style={{ marginBottom: 28 }}>
       <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>{label}</div>
       <div style={{ overflowX: 'auto' }}>
-        <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', minWidth: 300, display: 'block' }}>
+        <svg
+          viewBox={`0 0 ${W} ${H}`}
+          style={{ width: '100%', minWidth: 300, display: 'block', cursor: 'crosshair' }}
+          onMouseMove={handleMove}
+          onMouseLeave={() => setHoverIndex(null)}
+        >
+          {hoverX !== null && (
+            <line x1={hoverX} y1={PAD_TOP} x2={hoverX} y2={PAD_TOP + plotH} stroke="var(--text-muted)" strokeWidth="1" strokeDasharray="3 3" opacity="0.5" />
+          )}
+
           {prevPath && (
             <path d={prevPath} fill="none" stroke="var(--text-muted)" strokeWidth="1.5" strokeDasharray="4 2" opacity="0.7" />
           )}
@@ -230,51 +255,71 @@ function TrendChartForMetric({
           {prevData.map((p, i) => {
             const x = toX(i, prevData.length)
             const y = toY(p.value)
+            const active = hoverIndex === i
             return (
-              <g key={`prev-${i}`}>
-                <circle cx={x} cy={y} r="3" fill="var(--text-muted)" opacity="0.8" />
-                <title>{`${p.date}: ${fmt(p.value, format)}`}</title>
-                {showLabels && (
-                  <text x={x} y={y - 7} textAnchor="middle" fontSize="7.5" fill="var(--text-muted)">
-                    {fmtCompact(p.value, format)}
-                  </text>
-                )}
-              </g>
+              <circle key={`prev-${i}`} cx={x} cy={y} r={active ? 5 : 3} fill="var(--text-muted)" opacity={active ? 1 : 0.8} />
             )
           })}
           {currData.map((p, i) => {
             const x = toX(i, currData.length)
             const y = toY(p.value)
+            const active = hoverIndex === i
             return (
-              <g key={`curr-${i}`}>
-                <circle cx={x} cy={y} r="3" fill="var(--accent, #6366f1)" />
-                <title>{`${p.date}: ${fmt(p.value, format)}`}</title>
-                {showLabels && (
-                  <text x={x} y={y - 7} textAnchor="middle" fontSize="7.5" fill="var(--accent, #6366f1)" fontWeight="600">
-                    {fmtCompact(p.value, format)}
+              <circle key={`curr-${i}`} cx={x} cy={y} r={active ? 5 : 3} fill="var(--accent, #6366f1)" />
+            )
+          })}
+
+          {Array.from({ length: maxLen }).map((_, i) => {
+            if (i % labelStep !== 0 && i !== maxLen - 1) return null
+            const x = toX(i, maxLen)
+            return (
+              <g key={`axis-${i}`}>
+                {prevData[i] && (
+                  <text x={x} y={H - 22} textAnchor="middle" fontSize="8" fill="var(--text-muted)">
+                    {shortLabel(prevData[i].date)}
+                  </text>
+                )}
+                {currData[i] && (
+                  <text x={x} y={H - 8} textAnchor="middle" fontSize="8" fill="var(--accent, #6366f1)">
+                    {shortLabel(currData[i].date)}
                   </text>
                 )}
               </g>
             )
           })}
-
-          {prevData.map((p, i) => (
-            <text key={`lblp-${i}`} x={toX(i, prevData.length)} y={H - 4} textAnchor="middle" fontSize="8" fill="var(--text-muted)">
-              {shortLabel(p.date)}
-            </text>
-          ))}
-          {currData.map((p, i) => (
-            <text key={`lblc-${i}`} x={toX(i, currData.length)} y={H - 4} textAnchor="middle" fontSize="8" fill="var(--text-muted)">
-              {shortLabel(p.date)}
-            </text>
-          ))}
         </svg>
       </div>
-      {!showLabels && (
-        <p style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2 }}>
-          Passe o mouse sobre os pontos para ver os valores (período com muitos dias).
-        </p>
-      )}
+
+      <div
+        style={{
+          minHeight: 22,
+          fontSize: 11,
+          display: 'flex',
+          gap: 16,
+          marginTop: 2,
+          color: 'var(--text-muted)',
+        }}
+      >
+        {hoverIndex !== null ? (
+          <>
+            {hoverPrev && (
+              <span>
+                <span style={{ opacity: 0.7 }}>{shortLabel(hoverPrev.date)}: </span>
+                <strong style={{ color: 'inherit' }}>{fmt(hoverPrev.value, format)}</strong>
+              </span>
+            )}
+            {hoverCurr && (
+              <span>
+                <span style={{ color: 'var(--accent, #6366f1)', opacity: 0.85 }}>{shortLabel(hoverCurr.date)}: </span>
+                <strong style={{ color: 'var(--accent, #6366f1)' }}>{fmt(hoverCurr.value, format)}</strong>
+              </span>
+            )}
+          </>
+        ) : (
+          <span style={{ opacity: 0.7 }}>Passe o mouse sobre o gráfico para ver os valores de cada dia.</span>
+        )}
+      </div>
+
       <div style={{ display: 'flex', gap: 16, fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
         <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
           <svg width="20" height="4"><line x1="0" y1="2" x2="20" y2="2" stroke="var(--text-muted)" strokeWidth="1.5" strokeDasharray="4 2" /></svg>

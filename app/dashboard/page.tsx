@@ -422,6 +422,27 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   const start = makeDateValue(params.start, minDate)
   const end = makeDateValue(params.end, maxDate)
 
+  // Funil comercial (Reuniões Realizadas + Contratos Fechados) — exclusivo da Gold Media/AKRO.
+  // Fonte: tabela sales_funnel_daily, alimentada via n8n (Calendly + Fathom + ClickUp).
+  let salesFunnelTotals = { scheduled: 0, completed: 0, won: 0 }
+  if (effectiveClientId === AGENCIA_CLIENT_ID) {
+    let salesFunnelQuery = getSupabaseAdminClient()
+      .from('sales_funnel_daily')
+      .select('meetings_scheduled,meetings_completed,deals_won')
+      .eq('client_id', AGENCIA_CLIENT_ID)
+    if (start) salesFunnelQuery = salesFunnelQuery.gte('date', start)
+    if (end) salesFunnelQuery = salesFunnelQuery.lte('date', end)
+    const { data: salesFunnelRows } = await salesFunnelQuery
+    salesFunnelTotals = (salesFunnelRows || []).reduce(
+      (acc, r) => ({
+        scheduled: acc.scheduled + (r.meetings_scheduled || 0),
+        completed: acc.completed + (r.meetings_completed || 0),
+        won: acc.won + (r.deals_won || 0),
+      }),
+      { scheduled: 0, completed: 0, won: 0 }
+    )
+  }
+
   const dateFiltered = rows.filter((r) => {
     const byStart = start ? r.date >= start : true
     const byEnd = end ? r.date <= end : true
@@ -572,6 +593,20 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
         { stage: 'Iniciou Forms', value: totals.form_starts, rate: totals.view_forms > 0 ? totals.form_starts / totals.view_forms : 0 },
         { stage: 'Enviou Forms', value: totals.form_submits, rate: totals.form_starts > 0 ? totals.form_submits / totals.form_starts : 0 },
         { stage: agencyLeadLabel, value: totals.leads, rate: totals.form_submits > 0 ? totals.leads / totals.form_submits : 0 },
+        ...(effectiveClientId === AGENCIA_CLIENT_ID
+          ? [
+              {
+                stage: 'Reuniões Realizadas',
+                value: salesFunnelTotals.completed,
+                rate: totals.leads > 0 ? salesFunnelTotals.completed / totals.leads : 0,
+              },
+              {
+                stage: 'Contratos Fechados',
+                value: salesFunnelTotals.won,
+                rate: salesFunnelTotals.completed > 0 ? salesFunnelTotals.won / salesFunnelTotals.completed : 0,
+              },
+            ]
+          : []),
       ]
       : [
         { stage: 'Impressions', value: totals.impressions },
@@ -597,7 +632,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
     : useRdMode
       ? [90, 80, 68, 56, 44, 34]
       : useAgencyFormMode
-        ? [92, 84, 74, 64, 54, 44, 36]
+        ? [92, 84, 74, 64, 54, 44, 36, 28, 20]
         : useMessageMetricsMode
           ? [90, 80, 68, 56]
           : [90, 80, 68, 56, 44]
@@ -618,7 +653,9 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
         stageName.includes('enviou forms') ||
         stageName.includes('reuniões agendadas') ||
         stageName.includes('invitee_meeting_scheduled') ||
-        stageName.includes('mensagens')
+        stageName.includes('mensagens') ||
+        stageName.includes('reuniões realizadas') ||
+        stageName.includes('contratos fechados')
       return shouldShowCost && step.value > 0 ? totals.amount_spent / step.value : null
     })()
   }))
@@ -1292,6 +1329,16 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                     ) : null}
                     <div className="metric"><div className="label">Landing Page Views</div><div className="value">{fInt(totals.landing_page_views)}</div></div>
                     <div className="metric"><div className="label">{useAgencyFormMode ? agencyLeadLabel : 'Leads Gerenciador'}</div><div className="value">{fInt(totals.leads)}</div></div>
+                    {effectiveClientId === AGENCIA_CLIENT_ID ? (
+                      <>
+                        <div className="metric"><div className="label">Reuniões Realizadas</div><div className="value">{fInt(salesFunnelTotals.completed)}</div></div>
+                        <div className="metric"><div className="label">Contratos Fechados</div><div className="value">{fInt(salesFunnelTotals.won)}</div></div>
+                        <div className="metric"><div className="label">Taxa de Comparecimento</div><div className="value">{totals.leads > 0 ? fPct(salesFunnelTotals.completed / totals.leads) : '—'}</div></div>
+                        <div className="metric"><div className="label">Taxa de No-Show</div><div className="value">{totals.leads > 0 ? fPct(1 - salesFunnelTotals.completed / totals.leads) : '—'}</div></div>
+                        <div className="metric"><div className="label">Taxa de Fechamento</div><div className="value">{salesFunnelTotals.completed > 0 ? fPct(salesFunnelTotals.won / salesFunnelTotals.completed) : '—'}</div></div>
+                        <div className="metric"><div className="label">Custo por Contrato Fechado</div><div className="value">{salesFunnelTotals.won > 0 ? fMoney(totals.amount_spent / salesFunnelTotals.won) : '—'}</div></div>
+                      </>
+                    ) : null}
                     {useMessageMetricsMode ? (
                       <>
                         <div className="metric"><div className="label">Mensagens</div><div className="value">{fInt(totals.messages)}</div></div>

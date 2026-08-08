@@ -1082,6 +1082,11 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
               ← Admin
             </a>
           ) : null}
+          {effectiveClientId === 'b8724c80-9c00-48ce-b9e4-245ba9a69a20' ? (
+            <a href="/dashboard/funil" className="button-secondary" style={{ padding: '6px 14px', borderRadius: 8, fontSize: 12 }}>
+              Funil de Vendas
+            </a>
+          ) : null}
           <form action={refreshClientDataAction}>
             {isAdminView ? <input type="hidden" name="as" value={params.as} /> : null}
             <input type="hidden" name="return_to" value={currentDashboardHref} />
